@@ -1,0 +1,82 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Semantic version (e.g. 1.0.0), no v prefix — for DMG name only"
+        required: true
+        type: string
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  dmg:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install create-dmg
+        run: brew install create-dmg
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build Release (unsigned)
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          DERIVED="${{ github.workspace }}/build/DerivedData"
+          xcodebuild -project EchoDraft.xcodeproj -scheme EchoDraft \
+            -configuration Release \
+            -destination "platform=macOS,arch=arm64" \
+            -derivedDataPath "$DERIVED" \
+            MARKETING_VERSION="$VERSION" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY=- \
+            build
+          APP="${DERIVED}/Build/Products/Release/EchoDraft.app"
+          test -d "$APP"
+          chmod +x packaging/scripts/make-dmg.sh
+          ./packaging/scripts/make-dmg.sh "$VERSION" "$APP" "${{ github.workspace }}/build"
+
+      - name: Write checksums
+        run: |
+          cd build
+          shasum -a 256 EchoDraft-*.dmg | tee checksums.txt
+          cat checksums.txt
+
+      - name: Upload DMG as workflow artifact (manual runs)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: EchoDraft-dmg-${{ steps.ver.outputs.version }}
+          path: |
+            build/EchoDraft-*.dmg
+            build/checksums.txt
+
+      - name: Publish GitHub Release (tag pushes only)
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/EchoDraft-*.dmg
+            build/checksums.txt
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

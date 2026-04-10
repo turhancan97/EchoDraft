@@ -1,6 +1,7 @@
 .build/
 .swiftpm/
-*.xcodeproj/
-xcuserdata/
+# Track EchoDraft.xcodeproj (XcodeGen output) for CI and reproducible archives; ignore user data only.
+**/xcuserdata/
+**/xcuserdata/**
 DerivedData/
 .DS_Store

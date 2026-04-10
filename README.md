@@ -13,12 +13,13 @@ Offline-first macOS app for local transcription, diarization, summaries, and cha
 ```text
 EchoDraft/
 ├── Package.swift              # Swift Package: EchoDraftCore + EchoDraft executable
-├── EchoDraft.xcodeproj/       # Generated (XcodeGen) — commit for reliable Run/Archive
-├── project.yml                # XcodeGen spec
+├── EchoDraft.xcodeproj/       # XcodeGen output — committed for CI and archives
+├── project.yml                # XcodeGen spec (edit this, then xcodegen generate)
 ├── Sources/
 │   ├── EchoDraftCore/         # Models (SwiftData), services, view models, SwiftUI views
 │   └── EchoDraftApp/          # @main app entry, Info.plist, menu bar extra
-├── .github/workflows/ci.yml
+├── packaging/                 # DMG scripts, Homebrew cask template, distribution docs
+├── .github/workflows/         # ci.yml, release.yml
 └── .agent/                    # PRD and agent docs
 ```
 
@@ -41,7 +42,7 @@ xcodegen generate
 xcodebuild -project EchoDraft.xcodeproj -scheme EchoDraft -destination 'platform=macOS' -configuration Debug CODE_SIGNING_ALLOWED=NO build
 ```
 
-Plain `swift build` is **not** supported for this package on CLT-only setups because **SwiftData** macros are not available there.
+CI and command-line checks use **`xcodebuild`** against **`EchoDraft.xcodeproj`** so SwiftData macros resolve. Plain `swift build` can work when the full Swift toolchain includes SwiftData macros, but the recommended path is Xcode / `xcodebuild`.
 
 ## First launch & data
 
@@ -63,8 +64,22 @@ Heavy MLX tests are **not** run in the default GitHub Actions workflow. To add l
 
 ## CI
 
-The workflow builds with **`xcodebuild`** on **`macos-15`** and a recent Xcode (see workflow file). Stubs are enabled via `ECHODRAFT_USE_STUB_ML=1` so the job does not download large models.
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on pushes and pull requests to `main` / `master`: **`xcodebuild`** on **`macos-15`** (Apple Silicon destination), **Debug** configuration, **`CODE_SIGNING_ALLOWED=NO`**. Runtime stubs are not required for compile-only CI; set `ECHODRAFT_USE_STUB_ML=1` locally when running the app without MLX.
 
-## Release
+## Release (GitHub + DMG)
 
-Sign with **Developer ID**, **notarize**, distribute via **GitHub Releases** (see [.agent/first-release-v1.md](.agent/first-release-v1.md) §6).
+1. Bump **`MARKETING_VERSION`** / **`CURRENT_PROJECT_VERSION`** in [`project.yml`](project.yml), run **`xcodegen generate`**, commit.
+2. Tag and push: `git tag v1.0.0 && git push origin v1.0.0`.
+3. [`.github/workflows/release.yml`](.github/workflows/release.yml) builds an **unsigned** **Release** app, runs [`packaging/scripts/make-dmg.sh`](packaging/scripts/make-dmg.sh), and attaches **`EchoDraft-<version>.dmg`** plus **`checksums.txt`** to the GitHub Release for that tag.
+
+Manual test builds without a tag: run the **Release** workflow from the Actions tab (**workflow_dispatch**) and download the **artifact**.
+
+For **Developer ID** signing and **notarization**, use your Apple account locally or add GitHub Actions secrets and extend the workflow (see [`packaging/README.md`](packaging/README.md)). Unsigned DMGs are fine for testing; public distribution should be signed and notarized. More checklist context: [.agent/first-release-v1.md](.agent/first-release-v1.md).
+
+## Homebrew Cask
+
+A cask template lives in [`packaging/homebrew/Casks/echodraft.rb`](packaging/homebrew/Casks/echodraft.rb). Copy it into your own tap repository (e.g. `turhancan97/homebrew-tap`) and update `version`, `sha256`, and `url` after each release. See [`packaging/homebrew/README.md`](packaging/homebrew/README.md). Submitting to the **main** Homebrew cask repo is optional once URLs and checksums are stable.
+
+## Sparkle (auto-updates)
+
+Deferred until signed releases are standard; see [`packaging/SPARKLE.md`](packaging/SPARKLE.md).
