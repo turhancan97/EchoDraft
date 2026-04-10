@@ -51,7 +51,7 @@ struct EchoDraftApp: App {
             CommandGroup(replacing: .newItem) {}
         }
 
-        MenuBarExtra("EchoDraft", systemImage: "waveform") {
+        MenuBarExtra("EchoDraft", image: "MenuBarIcon") {
             Button("Open EchoDraft") {
                 NSApp.activate(ignoringOtherApps: true)
             }

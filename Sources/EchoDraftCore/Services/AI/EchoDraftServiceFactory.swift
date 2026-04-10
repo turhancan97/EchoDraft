@@ -5,7 +5,8 @@ public enum EchoDraftServiceFactory {
         if EchoDraftMLRuntime.useStubML {
             return StubTranscriptionService()
         }
-        let repo = ProcessInfo.processInfo.environment["ECHODRAFT_STT_MODEL"]
+        let repo = ProcessInfo.processInfo.environment["ECHODRAFT_STT_MODEL"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         if let repo, !repo.isEmpty {
             return MLXWhisperTranscriptionService(modelRepo: repo)
         }

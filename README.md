@@ -47,15 +47,19 @@ CI and command-line checks use **`xcodebuild`** against **`EchoDraft.xcodeproj`*
 ## First launch & data
 
 - **Library:** SwiftData on-disk store (default location managed by the system). Legacy **`library.json`** in Application Support is migrated once into SwiftData and renamed to **`library.json.migrated`** (flag: `didMigrateJSONToSwiftData`).
-- **MLX models:** STT (mlx-audio-swift / Qwen3-ASR by default) and LLM (mlx-swift-lm, default small instruct model) download from Hugging Face on first use, then run offline from the hub cache.
+- **MLX models:** STT defaults to **Qwen3-ASR** (`mlx-community/Qwen3-ASR-0.6B-4bit`); override with `ECHODRAFT_STT_MODEL` if needed. LLM defaults to **Phi-3.5 Mini Instruct** (`mlx-community/Phi-3.5-mini-instruct-4bit`). Weights download from Hugging Face on first use, then run offline from the hub cache.
 
 ## Environment variables
 
 | Variable | Effect |
 |----------|--------|
 | `ECHODRAFT_USE_STUB_ML=1` | Use `StubTranscriptionService` and `StubLLMService` (CI / fast dev without MLX). |
-| `ECHODRAFT_STT_MODEL` | Hugging Face repo id for Qwen3-ASR weights (mlx-audio STT). |
-| `ECHODRAFT_LLM_MODEL` | Hugging Face repo id for mlx-swift-lm (e.g. `mlx-community/...`). |
+| `ECHODRAFT_STT_MODEL` | Hugging Face repo id for Qwen3-ASR (mlx-audio). Default `mlx-community/Qwen3-ASR-0.6B-4bit`; larger (e.g. **1.7B**) improves quality at higher RAM cost. |
+| `ECHODRAFT_STT_CHUNK_DURATION_SEC` | Max audio chunk length in seconds for long files (default 1200). **Lower values (e.g. `180`–`300`) reduce peak RAM** at the cost of more internal passes; try if Activity Monitor shows memory pressure. |
+| `ECHODRAFT_STT_MIN_CHUNK_DURATION_SEC` | Minimum chunk size in seconds (default `1`). Rarely needs changing. |
+| `ECHODRAFT_STT_MAX_TOKENS` | Cap decoder tokens (default 8192). Lower (e.g. `4096`) may slightly reduce memory on very long speech. |
+| `ECHODRAFT_STT_LANGUAGE` | Hint such as `English` — can improve quality; does not greatly change RAM. |
+| `ECHODRAFT_LLM_MODEL` | Override LLM (default: `mlx-community/Phi-3.5-mini-instruct-4bit`). For more quality, try e.g. `mlx-community/Qwen2.5-1.5B-Instruct-4bit` (larger download). |
 | `HF_TOKEN` | Optional token for private Hugging Face models. |
 
 ## Optional MLX integration tests

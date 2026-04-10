@@ -21,26 +21,54 @@ public final class MLXWhisperTranscriptionService: TranscriptionServicing, @unch
         let model = try await cachedSTTModel()
         progress(0.15)
         let (inputSampleRate, inputAudio) = try loadAudioArray(from: audioFileURL)
-        let audio = try prepareAudioForSTT(inputAudio, inputSampleRate: inputSampleRate, targetSampleRate: 16_000)
+        let audio = try STTTranscriptionHelpers.prepareMonoAudioForSTT(
+            inputAudio,
+            inputSampleRate: inputSampleRate,
+            targetSampleRate: 16_000
+        )
         progress(0.25)
-        let defaults = model.defaultGenerationParameters
-        let genParams = STTGenerateParameters(
-            maxTokens: defaults.maxTokens,
+        let genParams = Self.effectiveSTTParameters(from: model.defaultGenerationParameters)
+        progress(0.35)
+        let output = model.generate(audio: audio, generationParameters: genParams)
+        progress(0.95)
+        let fallbackDuration = STTTranscriptionHelpers.estimateDurationSeconds(samples: audio, sampleRate: 16_000)
+        let segments = STTTranscriptionHelpers.timedSegments(from: output, fallbackDuration: fallbackDuration)
+        progress(1)
+        return segments
+    }
+
+    /// Applies optional ``ProcessInfo`` overrides for RAM/latency tradeoffs (see README).
+    private static func effectiveSTTParameters(from defaults: STTGenerateParameters) -> STTGenerateParameters {
+        let env = ProcessInfo.processInfo.environment
+        var chunk = defaults.chunkDuration
+        if let v = envFloat(env["ECHODRAFT_STT_CHUNK_DURATION_SEC"]) {
+            // Smaller chunks → lower peak memory on long files, more chunk boundaries (may slow total time).
+            chunk = min(max(v, 15), 1200)
+        }
+        var minChunk = defaults.minChunkDuration
+        if let v = envFloat(env["ECHODRAFT_STT_MIN_CHUNK_DURATION_SEC"]) {
+            minChunk = min(max(v, 0.5), 60)
+        }
+        var maxTok = defaults.maxTokens
+        if let s = env["ECHODRAFT_STT_MAX_TOKENS"], let v = Int(s), v > 0 {
+            maxTok = min(max(v, 256), 8192)
+        }
+        let lang: String?
+        if let l = env["ECHODRAFT_STT_LANGUAGE"], !l.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            lang = l.trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            lang = defaults.language
+        }
+        return STTGenerateParameters(
+            maxTokens: maxTok,
             temperature: defaults.temperature,
             topP: defaults.topP,
             topK: defaults.topK,
             verbose: false,
-            language: defaults.language,
-            chunkDuration: defaults.chunkDuration,
-            minChunkDuration: defaults.minChunkDuration
+            language: lang,
+            chunkDuration: chunk,
+            minChunkDuration: minChunk
         )
-        progress(0.35)
-        let output = model.generate(audio: audio, generationParameters: genParams)
-        progress(0.95)
-        let fallbackDuration = estimateDurationSeconds(samples: audio, sampleRate: 16_000)
-        let segments = mapOutput(output, fallbackDuration: fallbackDuration)
-        progress(1)
-        return segments
     }
 
     private func cachedSTTModel() async throws -> Qwen3ASRModel {
@@ -52,66 +80,4 @@ public final class MLXWhisperTranscriptionService: TranscriptionServicing, @unch
         return loaded
     }
 
-    private func prepareAudioForSTT(
-        _ audio: MLXArray,
-        inputSampleRate: Int,
-        targetSampleRate: Int
-    ) throws -> MLXArray {
-        let mono = audio.ndim > 1 ? audio.mean(axis: -1) : audio
-        guard inputSampleRate != targetSampleRate else {
-            return mono
-        }
-        return try resampleAudio(mono, from: inputSampleRate, to: targetSampleRate)
-    }
-
-    private func estimateDurationSeconds(samples: MLXArray, sampleRate: Int) -> Double {
-        let n = samples.ndim > 0 ? samples.dim(-1) : 0
-        guard sampleRate > 0, n > 0 else { return 0 }
-        return Double(n) / Double(sampleRate)
-    }
-
-    private func mapOutput(_ output: STTOutput, fallbackDuration: Double) -> [TimedTextSegment] {
-        if let raw = output.segments, !raw.isEmpty {
-            let mapped: [TimedTextSegment] = raw.compactMap { item in
-                guard let text = item["text"] as? String else { return nil }
-                let start = sttDouble(item["start"]) ?? 0
-                let end = sttDouble(item["end"]) ?? max(start, fallbackDuration)
-                return TimedTextSegment(
-                    startSeconds: start,
-                    endSeconds: end,
-                    text: text,
-                    speakerIndex: 0
-                )
-            }
-            if !mapped.isEmpty {
-                return mapped
-            }
-        }
-        let end = max(fallbackDuration, 0.01)
-        return [
-            TimedTextSegment(
-                startSeconds: 0,
-                endSeconds: end,
-                text: output.text,
-                speakerIndex: 0
-            ),
-        ]
-    }
-}
-
-private func sttDouble(_ value: Any?) -> Double? {
-    switch value {
-    case let v as Double:
-        return v
-    case let v as Float:
-        return Double(v)
-    case let v as Int:
-        return Double(v)
-    case let v as NSNumber:
-        return v.doubleValue
-    case let v as String:
-        return Double(v)
-    default:
-        return nil
-    }
 }
