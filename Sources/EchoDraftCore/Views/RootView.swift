@@ -1,10 +1,11 @@
 import AppKit
+import SwiftData
 import SwiftUI
-import UniformTypeIdentifiers
 
 public struct RootView: View {
     @Bindable public var viewModel: AppViewModel
     @State private var player = AudioPlaybackService()
+    @State private var securityScopedURL: URL?
 
     public init(viewModel: AppViewModel) {
         self.viewModel = viewModel
@@ -25,6 +26,16 @@ public struct RootView: View {
                     }
                 }
                 ToolbarItem {
+                    Button("Export PDF…", systemImage: "doc.richtext") {
+                        try? viewModel.exportPDFUsingSavePanel()
+                    }
+                }
+                ToolbarItem {
+                    Button("Export ZIP…", systemImage: "archivebox") {
+                        try? viewModel.exportZIPUsingSavePanel()
+                    }
+                }
+                ToolbarItem {
                     Button("Clear library", systemImage: "trash") {
                         try? viewModel.clearAllData()
                     }
@@ -42,34 +53,24 @@ public struct RootView: View {
         .onChange(of: viewModel.searchQuery) { _, _ in
             try? viewModel.refreshSearch()
         }
+        .onChange(of: viewModel.selectedRecording?.id) { _, _ in
+            Task { await reloadPlaybackForSelection() }
+        }
         .task {
             await viewModel.wireQueue()
             try? viewModel.loadLibrary()
+            await reloadPlaybackForSelection()
         }
     }
 
     private var transcriptColumn: some View {
         Group {
             if let rec = viewModel.selectedRecording {
-                VStack(alignment: .leading) {
-                    Text(rec.title).font(.title2)
-                    List {
-                        ForEach(Array(rec.segments.sorted(by: { $0.sortOrder < $1.sortOrder }).enumerated()), id: \.offset) { _, seg in
-                            VStack(alignment: .leading) {
-                                Text(seg.speakerLabel).font(.caption).foregroundStyle(.secondary)
-                                Text(seg.text)
-                                Button(formatTime(seg.startSeconds)) {
-                                    Task { await player.seek(to: seg.startSeconds) }
-                                }
-                                .buttonStyle(.link)
-                            }
-                        }
-                    }
-                    HStack {
-                        Button("Play") { Task { await player.play() } }
-                        Button("Pause") { Task { await player.pause() } }
-                    }
-                }
+                TranscriptDetailView(
+                    recording: rec,
+                    player: player,
+                    onFieldEdited: { viewModel.scheduleRecordingSave() }
+                )
                 .padding()
             } else {
                 ContentUnavailableView("No recording", systemImage: "waveform")
@@ -120,6 +121,77 @@ public struct RootView: View {
                 try? await viewModel.enqueueFiles(urls: p.urls)
             }
         }
+    }
+
+    private func reloadPlaybackForSelection() async {
+        if let prev = securityScopedURL {
+            prev.stopAccessingSecurityScopedResource()
+            securityScopedURL = nil
+        }
+        guard let rec = viewModel.selectedRecording,
+            let url = rec.resolvedSourceURL()
+        else {
+            return
+        }
+        let ok = url.startAccessingSecurityScopedResource()
+        if ok {
+            securityScopedURL = url
+        }
+        try? await player.load(url: url)
+    }
+}
+
+private struct TranscriptDetailView: View {
+    @Bindable var recording: Recording
+    var player: AudioPlaybackService
+    let onFieldEdited: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(recording.title).font(.title2)
+            List {
+                ForEach(recording.segments.sorted(by: { $0.sortOrder < $1.sortOrder }), id: \.id) { seg in
+                    TranscriptSegmentRow(
+                        segment: seg,
+                        recording: recording,
+                        player: player,
+                        onFieldEdited: onFieldEdited
+                    )
+                }
+            }
+            HStack {
+                Button("Play") { Task { await player.play() } }
+                Button("Pause") { Task { await player.pause() } }
+            }
+        }
+    }
+}
+
+private struct TranscriptSegmentRow: View {
+    @Bindable var segment: TranscriptSegment
+    @Bindable var recording: Recording
+    var player: AudioPlaybackService
+    let onFieldEdited: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            TextField("Speaker", text: $segment.speakerLabel)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: segment.speakerLabel) { _, _ in
+                    onFieldEdited()
+                }
+            TextField("Transcript", text: $segment.text, axis: .vertical)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: segment.text) { _, _ in
+                    recording.recomputeSearchText()
+                    onFieldEdited()
+                }
+            Button(formatTime(segment.startSeconds)) {
+                Task { await player.seek(to: segment.startSeconds) }
+            }
+            .buttonStyle(.link)
+        }
+        .padding(.vertical, 4)
     }
 
     private func formatTime(_ seconds: Double) -> String {

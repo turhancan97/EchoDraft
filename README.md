@@ -2,39 +2,68 @@
 
 Offline-first macOS app for local transcription, diarization, summaries, and chat over your recordings. See [.agent/prd.md](.agent/prd.md) and [.agent/first-release-v1.md](.agent/first-release-v1.md).
 
+## Requirements
+
+- **macOS 15+** (Sequoia or later)
+- **Xcode 16+** with the full Xcode app (not Command Line Tools alone). SwiftData `@Model` macros require the Xcode toolchain’s SwiftData macro plugin; builds must go through **`xcodebuild`** or opening **`EchoDraft.xcodeproj`** / the package in Xcode.
+- **Apple Silicon** recommended for MLX inference.
+
 ## Project layout
 
 ```text
 EchoDraft/
-├── Package.swift              # Swift Package: EchoDraftCore library + EchoDraft executable
+├── Package.swift              # Swift Package: EchoDraftCore + EchoDraft executable
+├── EchoDraft.xcodeproj/       # Generated (XcodeGen) — commit for reliable Run/Archive
+├── project.yml                # XcodeGen spec
 ├── Sources/
-│   ├── EchoDraftCore/         # Models, services, view models, SwiftUI views
-│   └── EchoDraftApp/          # @main app entry, menu bar extra
+│   ├── EchoDraftCore/         # Models (SwiftData), services, view models, SwiftUI views
+│   └── EchoDraftApp/          # @main app entry, Info.plist, menu bar extra
 ├── .github/workflows/ci.yml
 └── .agent/                    # PRD and agent docs
 ```
 
 ## Build
 
-Requirements: **macOS 14+**, **Apple Silicon**, Swift 6 / Xcode 15+ recommended.
+### Recommended: Xcode
+
+1. Open **`EchoDraft.xcodeproj`** (or open **`Package.swift`** in Xcode).
+2. Select the **EchoDraft** scheme, destination **My Mac**, then **Run** (⌘R).
+
+To regenerate the Xcode project after editing `project.yml`:
 
 ```bash
-swift build
-swift run EchoDraft
+xcodegen generate
 ```
 
-`swift run` **blocks the terminal** while the app is open—that is normal. You should see an **EchoDraft** icon in the **Dock**, a **window**, and a **menu bar extra** (waveform). If nothing appears, try **Terminal.app** (not an IDE-embedded terminal), or press **Cmd+Tab** to focus EchoDraft. Opening `Package.swift` in **Xcode** and running the **EchoDraft** scheme is the most reliable way to debug the GUI.
+### Command line (requires full Xcode.app)
 
-## Implementation notes (v1 scaffold)
+```bash
+xcodebuild -project EchoDraft.xcodeproj -scheme EchoDraft -destination 'platform=macOS' -configuration Debug CODE_SIGNING_ALLOWED=NO build
+```
 
-- **Library:** JSON file in Application Support (`FileLibraryRepository`). The PRD targets SwiftData; migrating to `@Model` in an Xcode app target is straightforward once you enable SwiftData macros in that target.
-- **Transcription:** `StubTranscriptionService` for fast builds/CI. Swap for MLX/Whisper (e.g. mlx-swift + community STT) behind `TranscriptionServicing`.
-- **LLM:** `StubLLMService` implements `LLMGenerating`. Replace with **mlx-swift-lm** (`LLMModelFactory` / `ChatSession`) when you add MLX packages back to `Package.swift`.
-- **Exports:** Markdown, PDF (via `NSTextView`), ZIP (`ZIPFoundation`), Notes (sharing services with pasteboard fallback).
+Plain `swift build` is **not** supported for this package on CLT-only setups because **SwiftData** macros are not available there.
+
+## First launch & data
+
+- **Library:** SwiftData on-disk store (default location managed by the system). Legacy **`library.json`** in Application Support is migrated once into SwiftData and renamed to **`library.json.migrated`** (flag: `didMigrateJSONToSwiftData`).
+- **MLX models:** STT (mlx-audio-swift / Qwen3-ASR by default) and LLM (mlx-swift-lm, default small instruct model) download from Hugging Face on first use, then run offline from the hub cache.
+
+## Environment variables
+
+| Variable | Effect |
+|----------|--------|
+| `ECHODRAFT_USE_STUB_ML=1` | Use `StubTranscriptionService` and `StubLLMService` (CI / fast dev without MLX). |
+| `ECHODRAFT_STT_MODEL` | Hugging Face repo id for Qwen3-ASR weights (mlx-audio STT). |
+| `ECHODRAFT_LLM_MODEL` | Hugging Face repo id for mlx-swift-lm (e.g. `mlx-community/...`). |
+| `HF_TOKEN` | Optional token for private Hugging Face models. |
+
+## Optional MLX integration tests
+
+Heavy MLX tests are **not** run in the default GitHub Actions workflow. To add local-only tests, create a separate XCTest target in Xcode, point it at small fixtures, and run on your machine with models already cached.
 
 ## CI
 
-GitHub Actions runs `swift build` on `macos-14`. Add `swift test` after reintroducing a test target (XCTest or swift-testing with full Xcode).
+The workflow builds with **`xcodebuild`** on **`macos-15`** and a recent Xcode (see workflow file). Stubs are enabled via `ECHODRAFT_USE_STUB_ML=1` so the job does not download large models.
 
 ## Release
 

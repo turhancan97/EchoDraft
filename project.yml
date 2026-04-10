@@ -1,0 +1,27 @@
+name: EchoDraft
+options:
+  bundleIdPrefix: com.echodraft
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+packages:
+  EchoDraft:
+    path: .
+targets:
+  EchoDraft:
+    type: application
+    platform: macOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: Sources/EchoDraftApp
+    dependencies:
+      - package: EchoDraft
+        product: EchoDraftCore
+    settings:
+      base:
+        PRODUCT_NAME: EchoDraft
+        PRODUCT_BUNDLE_IDENTIFIER: com.echodraft.app
+        MACOSX_DEPLOYMENT_TARGET: "15.0"
+        SWIFT_VERSION: "6.0"
+        GENERATE_INFOPLIST_FILE: false
+        INFOPLIST_FILE: Sources/EchoDraftApp/Info.plist

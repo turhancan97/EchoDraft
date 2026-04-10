@@ -1,12 +1,15 @@
 import Foundation
+import SwiftData
 
-public struct TranscriptSegment: Identifiable, Codable, Equatable, Hashable, Sendable {
-    public var id: UUID
+@Model
+public final class TranscriptSegment {
+    @Attribute(.unique) public var id: UUID
     public var startSeconds: Double
     public var endSeconds: Double
     public var text: String
     public var speakerLabel: String
     public var sortOrder: Int
+    public var recording: Recording?
 
     public init(
         id: UUID = UUID(),

@@ -18,6 +18,8 @@ public final class AppViewModel {
     private let export: ExportServicing
     private let llm: any LLMGenerating
 
+    private let saveDebouncer = Debouncer()
+
     public init(
         repository: LibraryRepository,
         queue: ProcessingQueue,
@@ -79,24 +81,32 @@ public final class AppViewModel {
         var segs: [TranscriptSegment] = []
         for s in segments {
             let spk = "Speaker \(s.speakerIndex + 1)"
-            segs.append(
-                TranscriptSegment(
-                    startSeconds: s.startSeconds,
-                    endSeconds: s.endSeconds,
-                    text: s.text,
-                    speakerLabel: spk,
-                    sortOrder: order
-                ))
+            let seg = TranscriptSegment(
+                startSeconds: s.startSeconds,
+                endSeconds: s.endSeconds,
+                text: s.text,
+                speakerLabel: spk,
+                sortOrder: order
+            )
+            segs.append(seg)
             order += 1
         }
-        let searchText = segs.map(\.text).joined(separator: " ")
-        let duration = segments.map(\.endSeconds).max() ?? 0
         let rec = Recording(
             id: newID,
             title: title,
-            durationSeconds: duration,
-            searchText: searchText,
-            segments: segs
+            durationSeconds: segments.map(\.endSeconds).max() ?? 0,
+            searchText: "",
+            segments: []
+        )
+        for seg in segs {
+            seg.recording = rec
+        }
+        rec.segments = segs
+        rec.recomputeSearchText()
+        rec.sourceBookmarkData = try? sourceURL.bookmarkData(
+            options: [.withSecurityScope],
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
         )
         do {
             try repository.insert(rec)
@@ -108,6 +118,42 @@ public final class AppViewModel {
     public func exportMarkdown() -> String {
         guard let r = selectedRecording else { return "" }
         return export.markdown(for: r)
+    }
+
+    public func scheduleRecordingSave() {
+        saveDebouncer.schedule { [weak self] in
+            try? self?.saveSelectedRecordingNow()
+        }
+    }
+
+    public func saveSelectedRecordingNow() throws {
+        guard let r = selectedRecording else { return }
+        r.recomputeSearchText()
+        try repository.save()
+    }
+
+    public func exportPDFUsingSavePanel() throws {
+        guard let r = selectedRecording else { return }
+        let data = try export.pdfData(for: r)
+        let base = sanitizeExportBasename(r.title)
+        _ = try MacSavePanel.save(
+            data: data,
+            suggestedFilename: "\(base).pdf",
+            allowedTypes: [.pdf]
+        )
+    }
+
+    public func exportZIPUsingSavePanel() throws {
+        guard let r = selectedRecording else { return }
+        let audioURL = r.resolvedSourceURL()
+        let zipTemp = try export.zipTranscriptAndAudio(recording: r, audioURL: audioURL)
+        defer { try? FileManager.default.removeItem(at: zipTemp) }
+        let base = sanitizeExportBasename(r.title)
+        _ = try MacSavePanel.copyFile(
+            from: zipTemp,
+            suggestedFilename: "\(base).zip",
+            allowedTypes: [.zip]
+        )
     }
 
     public func runSummary(template: SummaryTemplate) async {
@@ -131,4 +177,10 @@ public final class AppViewModel {
             chatReply = "Error: \(error.localizedDescription)"
         }
     }
+}
+
+private func sanitizeExportBasename(_ s: String) -> String {
+    s.replacingOccurrences(of: "/", with: "-")
+        .replacingOccurrences(of: ":", with: "-")
+        .prefix(80).description
 }
