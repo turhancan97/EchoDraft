@@ -88,6 +88,13 @@ public actor ProcessingQueue {
     }
 
     private func run(job: Job) async {
+        // Keep security-scoped access for the whole job (files chosen via NSOpenPanel / sandbox).
+        let scoped = job.sourceURL.startAccessingSecurityScopedResource()
+        defer {
+            if scoped {
+                job.sourceURL.stopAccessingSecurityScopedResource()
+            }
+        }
         await notify(job.id, .running(progress: 0))
         cancelled = false
         do {

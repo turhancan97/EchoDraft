@@ -11,6 +11,14 @@ public enum SummaryTemplate: String, CaseIterable, Sendable {
     case executive = "Executive summary"
 }
 
+/// Progress shown in the UI while an LLM loads weights or generates text.
+public enum LLMWorkPhase: Equatable, Sendable {
+    /// Downloading / loading weights (0…1).
+    case loadingModel(progress: Double)
+    case summarizing
+    case chatting
+}
+
 /// Offline-capable stub: replace with `EchoLLMServiceMLX` (mlx-swift-lm) in an Xcode target that links MLX.
 public struct StubLLMService: LLMGenerating {
     public init() {}

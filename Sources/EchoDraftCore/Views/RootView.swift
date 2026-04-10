@@ -1,6 +1,7 @@
 import AppKit
 import SwiftData
 import SwiftUI
+import UniformTypeIdentifiers
 
 public struct RootView: View {
     @Bindable public var viewModel: AppViewModel
@@ -12,7 +13,9 @@ public struct RootView: View {
     }
 
     public var body: some View {
-        NavigationSplitView {
+        VStack(spacing: 0) {
+            processingStatusBanner
+            NavigationSplitView {
             List(selection: $viewModel.selectedRecording) {
                 ForEach(viewModel.recordings, id: \.id) { rec in
                     Text(rec.title).tag(rec as Recording?)
@@ -61,6 +64,83 @@ public struct RootView: View {
             try? viewModel.loadLibrary()
             await reloadPlaybackForSelection()
         }
+        }
+    }
+
+    @ViewBuilder
+    private var processingStatusBanner: some View {
+        if let err = viewModel.importError, !err.isEmpty {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                Text(err)
+                    .font(.callout)
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(10)
+            .background(Color.red.opacity(0.12))
+        }
+        if showsActiveProcessing {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(processingTitle)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                if case .running(let p) = viewModel.activeJobState {
+                    ProgressView(value: p, total: 1)
+                    Text("Progress \(Int(p * 100))% — first run may download large models.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ProgressView()
+                        .scaleEffect(0.9)
+                    Text(processingSubtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.accentColor.opacity(0.08))
+        }
+    }
+
+    private var showsActiveProcessing: Bool {
+        guard let s = viewModel.activeJobState else { return false }
+        switch s {
+        case .running, .paused, .queued:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private var processingTitle: String {
+        guard let s = viewModel.activeJobState else { return "Processing" }
+        switch s {
+        case .queued:
+            return "Queued…"
+        case .running(let p) where p < 0.25:
+            return "Preparing audio…"
+        case .running(let p) where p < 0.75:
+            return "Transcribing (MLX)…"
+        case .running:
+            return "Finishing…"
+        case .paused:
+            return "Paused"
+        default:
+            return "Processing…"
+        }
+    }
+
+    private var processingSubtitle: String {
+        guard let s = viewModel.activeJobState else { return "" }
+        switch s {
+        case .paused:
+            return "Resume from the queue when supported."
+        default:
+            return ""
+        }
     }
 
     private var transcriptColumn: some View {
@@ -81,13 +161,16 @@ public struct RootView: View {
     private var summaryColumn: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Summary").font(.headline)
+            llmProgressSection
             HStack {
                 Button("Bullets") {
                     Task { await viewModel.runSummary(template: .bulletPoints) }
                 }
+                .disabled(viewModel.llmWorkPhase != nil)
                 Button("Executive") {
                     Task { await viewModel.runSummary(template: .executive) }
                 }
+                .disabled(viewModel.llmWorkPhase != nil)
                 Button("Copy MD") {
                     let md = viewModel.exportMarkdown()
                     NSPasteboard.general.clearContents()
@@ -101,9 +184,11 @@ public struct RootView: View {
             Divider()
             Text("Chat").font(.headline)
             TextField("Question", text: $viewModel.chatQuestion)
+                .disabled(viewModel.llmWorkPhase != nil)
             Button("Ask") {
                 Task { await viewModel.runChat() }
             }
+            .disabled(viewModel.llmWorkPhase != nil)
             ScrollView {
                 Text(viewModel.chatReply)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -112,13 +197,51 @@ public struct RootView: View {
         .padding()
     }
 
+    @ViewBuilder
+    private var llmProgressSection: some View {
+        if let phase = viewModel.llmWorkPhase {
+            VStack(alignment: .leading, spacing: 6) {
+                switch phase {
+                case .loadingModel(let p):
+                    Text("Loading language model")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    ProgressView(value: p, total: 1)
+                    Text("\(Int((p * 100).rounded()))% — first run may download a large checkpoint.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                case .summarizing:
+                    Text("Writing summary…")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    ProgressView()
+                        .controlSize(.small)
+                case .chatting:
+                    Text("Generating answer…")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.accentColor.opacity(0.1))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+    }
+
     private func pickFiles() {
         let p = NSOpenPanel()
         p.allowsMultipleSelection = true
-        p.allowedContentTypes = [.audio, .movie, .mpeg4Audio, .mp3]
+        p.allowedContentTypes = [.audio, .movie, .mpeg4Movie, .mpeg4Audio, .mp3]
         if p.runModal() == .OK {
             Task {
-                try? await viewModel.enqueueFiles(urls: p.urls)
+                do {
+                    try await viewModel.enqueueFiles(urls: p.urls)
+                } catch {
+                    viewModel.importError = error.localizedDescription
+                }
             }
         }
     }

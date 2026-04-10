@@ -9,9 +9,13 @@ public final class AppViewModel {
     public var selectedRecording: Recording?
     public var searchQuery: String = ""
     public var activeJobState: ProcessingJobState?
+    /// Last user-visible error from import, transcription, or saving (cleared when a new run starts).
+    public var importError: String?
     public var summaryText: String = ""
     public var chatReply: String = ""
     public var chatQuestion: String = ""
+    /// Non-nil while the LLM is loading or generating (drives progress UI).
+    public var llmWorkPhase: LLMWorkPhase?
 
     private let repository: LibraryRepository
     public let processingQueue: ProcessingQueue
@@ -58,6 +62,7 @@ public final class AppViewModel {
     }
 
     public func enqueueFiles(urls: [URL]) async throws {
+        importError = nil
         for url in urls {
             _ = try await processingQueue.enqueue(url)
         }
@@ -67,6 +72,9 @@ public final class AppViewModel {
         await processingQueue.setOnStateChange { [weak self] _, state in
             await MainActor.run {
                 self?.activeJobState = state
+                if case .failed(let message) = state {
+                    self?.importError = message
+                }
             }
         }
         await processingQueue.setOnCompleted { [weak self] _, segments, sourceURL, _ in
@@ -112,7 +120,10 @@ public final class AppViewModel {
             try repository.insert(rec)
             try loadLibrary()
             selectedRecording = recordings.first(where: { $0.id == newID })
-        } catch {}
+            importError = nil
+        } catch {
+            importError = "Could not save recording: \(error.localizedDescription)"
+        }
     }
 
     public func exportMarkdown() -> String {
@@ -159,8 +170,20 @@ public final class AppViewModel {
     public func runSummary(template: SummaryTemplate) async {
         guard let r = selectedRecording else { return }
         let text = r.segments.sorted { $0.sortOrder < $1.sortOrder }.map(\.text).joined(separator: "\n")
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            summaryText =
+                "No transcript text to summarize. Finish transcription or edit segments so they contain text."
+            return
+        }
+        llmWorkPhase = .loadingModel(progress: 0)
+        defer { llmWorkPhase = nil }
         do {
-            try await llm.ensureLoaded { _ in }
+            try await llm.ensureLoaded { [weak self] p in
+                Task { @MainActor in
+                    self?.llmWorkPhase = .loadingModel(progress: p)
+                }
+            }
+            llmWorkPhase = .summarizing
             summaryText = try await llm.summarize(transcript: text, template: template)
         } catch {
             summaryText = "Error: \(error.localizedDescription)"
@@ -170,8 +193,20 @@ public final class AppViewModel {
     public func runChat() async {
         guard let r = selectedRecording else { return }
         let text = r.segments.sorted { $0.sortOrder < $1.sortOrder }.map(\.text).joined(separator: "\n")
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            chatReply =
+                "No transcript text yet. Finish transcription or add text to segments before asking a question."
+            return
+        }
+        llmWorkPhase = .loadingModel(progress: 0)
+        defer { llmWorkPhase = nil }
         do {
-            try await llm.ensureLoaded { _ in }
+            try await llm.ensureLoaded { [weak self] p in
+                Task { @MainActor in
+                    self?.llmWorkPhase = .loadingModel(progress: p)
+                }
+            }
+            llmWorkPhase = .chatting
             chatReply = try await llm.chat(transcript: text, question: chatQuestion)
         } catch {
             chatReply = "Error: \(error.localizedDescription)"
