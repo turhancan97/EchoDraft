@@ -14,8 +14,9 @@ jobs:
       - uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
-      - name: Build EchoDraft (Xcode)
+      # EchoDraft.xcodeproj is gitignored (generate with: xcodegen generate from project.yml).
+      # CI builds via SwiftPM so the same sources compile on every push without committing the .xcodeproj.
+      - name: Build EchoDraft (SwiftPM)
         env:
           ECHODRAFT_USE_STUB_ML: "1"
-        run: |
-          xcodebuild -project EchoDraft.xcodeproj -scheme EchoDraft -destination 'platform=macOS' -configuration Debug CODE_SIGNING_ALLOWED=NO build
+        run: swift build --configuration debug
