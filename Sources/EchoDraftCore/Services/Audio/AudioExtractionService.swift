@@ -24,7 +24,8 @@ public final class AudioExtractionService: AudioExtractionServicing, @unchecked 
 
     public func extractAudioToTemporaryFile(from mediaURL: URL) async throws -> URL {
         let asset = AVURLAsset(url: mediaURL)
-        guard let track = try await asset.loadTracks(withMediaType: .audio).first else {
+        let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+        guard !audioTracks.isEmpty else {
             throw AudioExtractionError.noAudioTrack
         }
         let outDir = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
@@ -34,11 +35,10 @@ public final class AudioExtractionService: AudioExtractionServicing, @unchecked 
         else {
             throw AudioExtractionError.exportFailed("Could not create export session")
         }
-        session.outputURL = outURL
-        session.outputFileType = .m4a
-        await session.export()
-        guard session.status == .completed else {
-            throw AudioExtractionError.exportFailed(session.error?.localizedDescription ?? "unknown")
+        do {
+            try await session.export(to: outURL, as: .m4a)
+        } catch {
+            throw AudioExtractionError.exportFailed(error.localizedDescription)
         }
         return outURL
     }
