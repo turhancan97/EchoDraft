@@ -7,11 +7,25 @@ options:
 packages:
   EchoDraft:
     path: .
+schemes:
+  EchoDraft:
+    build:
+      targets:
+        EchoDraft: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+
 targets:
   EchoDraft:
     type: application
+    # Required for Xcode 14+ so the scheme has a non-empty supported platform list
+    # (avoids "Supported platforms for the buildables in the current scheme is empty").
+    supportedDestinations: [macOS]
     platform: macOS
-    deploymentTarget: "15.0"
+    deploymentTarget:
+      macOS: "15.0"
     sources:
       - path: Sources/EchoDraftApp
     dependencies:

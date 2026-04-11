@@ -5,14 +5,14 @@ Offline-first macOS app for local transcription, diarization, summaries, and cha
 ## Requirements
 
 - **macOS 15+** (Sequoia or later)
-- **Xcode 16+** with the full Xcode app (not Command Line Tools alone). SwiftData `@Model` macros require the Xcode toolchain’s SwiftData macro plugin; builds must go through **`xcodebuild`** or opening **`EchoDraft.xcodeproj`** / the package in Xcode.
+- **Xcode 16+** with the full Xcode app (not Command Line Tools alone). SwiftData `@Model` macros require the Xcode toolchain’s SwiftData macro plugin; builds must go through **`xcodebuild`** or opening **`EchoDraft.xcodeproj`** in Xcode.
 - **Apple Silicon** recommended for MLX inference.
 
 ## Project layout
 
 ```text
 EchoDraft/
-├── Package.swift              # Swift Package: EchoDraftCore + EchoDraft executable
+├── Package.swift              # Swift Package: EchoDraftCore only (the .app is built via Xcode project)
 ├── EchoDraft.xcodeproj/       # XcodeGen output — committed for CI and archives
 ├── project.yml                # XcodeGen spec (edit this, then xcodegen generate)
 ├── Sources/
@@ -27,8 +27,8 @@ EchoDraft/
 
 ### Recommended: Xcode
 
-1. Open **`EchoDraft.xcodeproj`** (or open **`Package.swift`** in Xcode).
-2. Select the **EchoDraft** scheme, destination **My Mac**, then **Run** (⌘R).
+1. Open **`EchoDraft.xcodeproj`** (double-click it or **File → Open**). Do **not** open **`Package.swift`** as the main project if you want the real macOS app: the Swift package only contains **`EchoDraftCore`**; the **`EchoDraft.app`** bundle is produced only by the Xcode project target.
+2. Select the **EchoDraft** scheme, destination **My Mac**, then **Run** (⌘R). The built app is **`EchoDraft.app`** under Derived Data (Xcode **Product → Show Build Folder in Finder**).
 
 To regenerate the Xcode project after editing `project.yml`:
 

@@ -1,5 +1,7 @@
 .build/
 .swiftpm/
+# Local / CI build products (Xcode, packaging scripts writing DMGs under ./build).
+build/
 # Track EchoDraft.xcodeproj (XcodeGen output) for CI and reproducible archives; ignore user data only.
 **/xcuserdata/
 **/xcuserdata/**

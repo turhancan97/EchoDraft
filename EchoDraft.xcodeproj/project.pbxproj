@@ -175,7 +175,11 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.echodraft.app;
 				PRODUCT_NAME = EchoDraft;
 				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "";
 			};
 			name = Release;
 		};
@@ -315,7 +319,11 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.echodraft.app;
 				PRODUCT_NAME = EchoDraft;
 				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "";
 			};
 			name = Debug;
 		};

@@ -7,7 +7,6 @@ let package = Package(
     platforms: [.macOS(.v15)],
     products: [
         .library(name: "EchoDraftCore", targets: ["EchoDraftCore"]),
-        .executable(name: "EchoDraft", targets: ["EchoDraft"]),
     ],
     dependencies: [
         .package(url: "https://github.com/weichsel/ZIPFoundation", from: "0.9.0"),
@@ -25,11 +24,6 @@ let package = Package(
                 .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
             ],
             path: "Sources/EchoDraftCore"
-        ),
-        .executableTarget(
-            name: "EchoDraft",
-            dependencies: ["EchoDraftCore"],
-            path: "Sources/EchoDraftApp"
         ),
     ]
 )
