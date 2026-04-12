@@ -12,7 +12,7 @@ struct EchoDraftApp: App {
 
     init() {
         do {
-            container = try ModelContainer(for: Recording.self, TranscriptSegment.self)
+            container = try ModelContainer(for: Recording.self, TranscriptSegment.self, TranscriptVariant.self)
         } catch {
             fatalError("Could not open SwiftData store: \(error.localizedDescription)")
         }
@@ -25,7 +25,8 @@ struct EchoDraftApp: App {
         let repo = SwiftDataLibraryRepository(modelContext: ctx)
         let queue = ProcessingQueue(
             extract: AudioExtractionService(),
-            transcribe: EchoDraftServiceFactory.makeTranscriptionService(),
+            offlineTranscribe: EchoDraftServiceFactory.makeTranscriptionService(),
+            onlineTranscribe: EchoDraftServiceFactory.makeOnlineTranscriptionService(),
             diarize: PauseBasedDiarizationService()
         )
         _viewModel = State(
@@ -33,7 +34,8 @@ struct EchoDraftApp: App {
                 repository: repo,
                 queue: queue,
                 export: ExportService(),
-                llm: EchoDraftServiceFactory.makeLLMService()
+                offlineLLM: EchoDraftServiceFactory.makeLLMService(),
+                onlineLLM: EchoDraftServiceFactory.makeOnlineLLMService()
             ))
     }
 
@@ -50,8 +52,12 @@ struct EchoDraftApp: App {
         .commands {
             CommandGroup(replacing: .newItem) {}
         }
+        Settings {
+            EchoDraftSettingsView()
+        }
 
-        MenuBarExtra("EchoDraft", image: "MenuBarIcon") {
+        // Icon-only label keeps the menu bar slot narrow (avoid `MenuBarExtra(_:image:)` which can show title + wide intrinsic image).
+        MenuBarExtra {
             Button("Open EchoDraft") {
                 NSApp.activate(ignoringOtherApps: true)
             }
@@ -59,6 +65,15 @@ struct EchoDraftApp: App {
             Button("Quit") {
                 NSApp.terminate(nil)
             }
+        } label: {
+            Image("MenuBarIcon")
+                .renderingMode(.template)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(width: 18, height: 18)
+                .accessibilityLabel("EchoDraft")
         }
+        .menuBarExtraStyle(.menu)
     }
 }

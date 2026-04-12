@@ -5,7 +5,7 @@
 <h1 align="center">EchoDraft</h1>
 
 <p align="center">
-  <strong>Offline-first macOS app for local transcription, summaries, and chat over your recordings — powered by on-device MLX, with no cloud inference in the core workflow.</strong>
+  <strong>Offline-first macOS app for local transcription, summaries, and chat over your recordings — powered by on-device MLX by default; optional Online (OpenAI) mode with your own API key.</strong>
 </p>
 
 <p align="center">
@@ -47,6 +47,10 @@ Product detail and roadmap notes live in [.agent/prd.md](.agent/prd.md) and [.ag
 | **Summaries** | Template styles (e.g. bullets, executive) via a small local **LLM** (default: Phi-3.5-class). |
 | **Chat** | Ask questions grounded in the current transcript. |
 | **Stub mode** | `ECHODRAFT_USE_STUB_ML=1` for UI/dev without loading MLX (CI-friendly). |
+
+### Online mode (optional, OpenAI)
+
+You can switch the app to **Online** processing and use your **own OpenAI API key** (bring-your-own-key): transcription (e.g. Whisper-class API) and summaries/chat go to your configured **API base URL** (default `https://api.openai.com`), with the key stored in the **macOS Keychain**. **Offline** mode keeps STT and LLM on-device via MLX. Use **EchoDraft → Settings** (⌘,) for the API key and base URL, and the **toolbar** for the default Offline/Online mode; see [Data & privacy](#data--privacy) for what leaves the device.
 
 ### Distribution & tooling
 
@@ -178,6 +182,7 @@ Environment variables (optional):
 | `ECHODRAFT_STT_LANGUAGE` | e.g. `English` — quality hint. |
 | `ECHODRAFT_LLM_MODEL` | Override LLM id (default Phi-3.5-class instruct). |
 | `HF_TOKEN` | Optional; for private Hugging Face models. |
+| `OPENAI_API_KEY` | **Debug builds only:** optional override instead of Keychain for OpenAI online mode (never rely on this in release). |
 
 Set in **Xcode → Scheme → Run → Arguments → Environment Variables**, or export in your shell before launching from Terminal.
 
@@ -186,8 +191,8 @@ Set in **Xcode → Scheme → Run → Arguments → Environment Variables**, or 
 ## Data & privacy
 
 - **Library:** SwiftData store (system-managed location). Legacy `library.json` may be **migrated once** into SwiftData and renamed (see app migration logic).  
-- **Models:** STT/LLM weights download from **Hugging Face** on **first use** per model, then load from the **hub cache** offline.  
-- **No cloud API** in EchoDraft’s own code for transcription/LLM — third-party MLX stacks perform hub/cache access as documented upstream.
+- **Models (offline mode):** STT/LLM weights download from **Hugging Face** on **first use** per model, then load from the **hub cache** offline. Third-party MLX stacks perform hub/cache access as documented upstream.  
+- **Online mode (optional):** If you enable **Online** processing and add an OpenAI-compatible API key, **audio and text are sent to that provider** for transcription and for summary/chat, under that provider’s terms. EchoDraft does not operate its own inference servers; traffic is **direct from your Mac** to the API you configure. See OpenAI’s [API data documentation](https://platform.openai.com/docs/guides/your-data) for current policies (informational only).
 
 ---
 

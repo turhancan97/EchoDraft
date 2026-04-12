@@ -16,7 +16,7 @@ public final class ExportService: ExportServicing {
 
     public func markdown(for recording: Recording) -> String {
         var lines: [String] = ["# \(recording.title)", ""]
-        for seg in recording.segments.sorted(by: { $0.sortOrder < $1.sortOrder }) {
+        for seg in recording.activeSegmentsSorted() {
             let t0 = formatTime(seg.startSeconds)
             let t1 = formatTime(seg.endSeconds)
             lines.append("**\(seg.speakerLabel)** [\(t0)–\(t1)]")

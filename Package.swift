@@ -25,5 +25,10 @@ let package = Package(
             ],
             path: "Sources/EchoDraftCore"
         ),
+        .testTarget(
+            name: "EchoDraftCoreTests",
+            dependencies: ["EchoDraftCore"],
+            path: "Tests/EchoDraftCoreTests"
+        ),
     ]
 )

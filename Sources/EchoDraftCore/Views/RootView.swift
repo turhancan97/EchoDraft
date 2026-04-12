@@ -7,6 +7,7 @@ public struct RootView: View {
     @Bindable public var viewModel: AppViewModel
     @State private var player = AudioPlaybackService()
     @State private var securityScopedURL: URL?
+    @State private var showOnlinePrivacySheet = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
 
@@ -40,7 +41,36 @@ public struct RootView: View {
                 try? viewModel.loadLibrary()
                 await reloadPlaybackForSelection()
             }
+            .onChange(of: viewModel.selectedRecording?.id) { _, _ in
+                viewModel.refreshUsageMeter()
+            }
+            .onChange(of: viewModel.userSettings.globalProcessingMode) { _, newValue in
+                if newValue == .online, !viewModel.userSettings.onlinePrivacyAcknowledged {
+                    showOnlinePrivacySheet = true
+                }
+            }
+            .sheet(isPresented: $showOnlinePrivacySheet) {
+                onlinePrivacySheet
+            }
         }
+    }
+
+    private var onlinePrivacySheet: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Online mode")
+                .font(DesignSystem.headlineRounded())
+            Text(
+                "Audio is uploaded for transcription and text may be sent for summarization. You can switch back to Offline anytime."
+            )
+            .foregroundStyle(.secondary)
+            Button("Continue") {
+                viewModel.userSettings.onlinePrivacyAcknowledged = true
+                showOnlinePrivacySheet = false
+            }
+            .keyboardShortcut(.defaultAction)
+        }
+        .padding(DesignSystem.outerPadding)
+        .frame(minWidth: 380)
     }
 
     private var librarySidebar: some View {
@@ -57,6 +87,17 @@ public struct RootView: View {
         .echoFrostedPanel()
         .toolbar {
             ToolbarItemGroup {
+                Picker(
+                    "Default mode",
+                    selection: Binding(
+                        get: { viewModel.userSettings.globalProcessingMode },
+                        set: { viewModel.userSettings.globalProcessingMode = $0 }
+                    )
+                ) {
+                    Text("Offline").tag(ProcessingMode.offline)
+                    Text("Online").tag(ProcessingMode.online)
+                }
+                .frame(width: 100)
                 toolbarChromeButton(systemName: "plus", help: "Add files", action: pickFiles)
                 toolbarChromeButton(systemName: "doc.richtext", help: "Export PDF…") {
                     try? viewModel.exportPDFUsingSavePanel()
@@ -113,7 +154,7 @@ public struct RootView: View {
                 if case .running(let p) = viewModel.activeJobState {
                     ProgressView(value: p, total: 1)
                         .tint(DesignSystem.accentElectricBlue)
-                    Text("Progress \(Int(p * 100))% — first run may download large models.")
+                    Text(progressCaption(for: p))
                         .font(DesignSystem.captionMuted())
                         .foregroundStyle(.secondary)
                         .lineSpacing(2)
@@ -156,7 +197,10 @@ public struct RootView: View {
         case .running(let p) where p < 0.25:
             return "Preparing audio…"
         case .running(let p) where p < 0.75:
-            return "Transcribing (MLX)…"
+            if viewModel.activeTranscriptionMode == .online {
+                return "Transcribing (OpenAI)…"
+            }
+            return "Transcribing (on-device)…"
         case .running:
             return "Finishing…"
         case .paused:
@@ -164,6 +208,13 @@ public struct RootView: View {
         default:
             return "Processing…"
         }
+    }
+
+    private func progressCaption(for p: Double) -> String {
+        if viewModel.activeTranscriptionMode == .online {
+            return "Progress \(Int(p * 100))% — uploading and transcribing via your API endpoint."
+        }
+        return "Progress \(Int(p * 100))% — first run may download large models."
     }
 
     private var processingSubtitle: String {
@@ -176,11 +227,26 @@ public struct RootView: View {
         }
     }
 
+    private var loadingModelTitle: String {
+        if viewModel.userSettings.effectiveMode(for: viewModel.selectedRecording) == .online {
+            return "Preparing online model"
+        }
+        return "Loading language model"
+    }
+
+    private func loadingModelCaption(_ p: Double) -> String {
+        if viewModel.userSettings.effectiveMode(for: viewModel.selectedRecording) == .online {
+            return "\(Int((p * 100).rounded()))% — connecting to the API."
+        }
+        return "\(Int((p * 100).rounded()))% — first run may download a large checkpoint."
+    }
+
     private var transcriptColumn: some View {
         Group {
             if let rec = viewModel.selectedRecording {
                 TranscriptDetailView(
                     recording: rec,
+                    viewModel: viewModel,
                     player: player,
                     onFieldEdited: { viewModel.scheduleRecordingSave() },
                     colorScheme: colorScheme
@@ -203,6 +269,11 @@ public struct RootView: View {
             Text("Summary")
                 .font(DesignSystem.headlineRounded())
                 .foregroundStyle(.primary)
+            if !viewModel.usageMeterText.isEmpty {
+                Text(viewModel.usageMeterText)
+                    .font(DesignSystem.captionMuted())
+                    .foregroundStyle(.secondary)
+            }
             llmProgressSection
             HStack(spacing: 10) {
                 Button("Bullets") {
@@ -260,11 +331,11 @@ public struct RootView: View {
             VStack(alignment: .leading, spacing: 8) {
                 switch phase {
                 case .loadingModel(let p):
-                    Text("Loading language model")
+                    Text(loadingModelTitle)
                         .font(DesignSystem.headlineRounded())
                     ProgressView(value: p, total: 1)
                         .tint(DesignSystem.accentElectricBlue)
-                    Text("\(Int((p * 100).rounded()))% — first run may download a large checkpoint.")
+                    Text(loadingModelCaption(p))
                         .font(DesignSystem.captionMuted())
                         .foregroundStyle(.secondary)
                         .lineSpacing(2)
@@ -334,6 +405,7 @@ public struct RootView: View {
 
 private struct TranscriptDetailView: View {
     @Bindable var recording: Recording
+    var viewModel: AppViewModel
     var player: AudioPlaybackService
     let onFieldEdited: () -> Void
     var colorScheme: ColorScheme
@@ -348,8 +420,64 @@ private struct TranscriptDetailView: View {
                     DesignSystem.preferredAnimation(reduceMotion: reduceMotion, value: recording.title),
                     value: recording.title
                 )
+
+            HStack(spacing: 12) {
+                Text("Transcribe as")
+                    .font(DesignSystem.captionMuted())
+                    .foregroundStyle(.secondary)
+                Picker(
+                    "",
+                    selection: Binding(
+                        get: {
+                            if let r = recording.processingModeOverrideRaw,
+                                let m = ProcessingMode(rawValue: r)
+                            {
+                                switch m {
+                                case .offline: return 1
+                                case .online: return 2
+                                }
+                            }
+                            return 0
+                        },
+                        set: { idx in
+                            switch idx {
+                            case 0: recording.processingModeOverrideRaw = nil
+                            case 1: recording.processingModeOverrideRaw = ProcessingMode.offline.rawValue
+                            case 2: recording.processingModeOverrideRaw = ProcessingMode.online.rawValue
+                            default: break
+                            }
+                            onFieldEdited()
+                        }
+                    )
+                ) {
+                    Text("App default").tag(0)
+                    Text("Offline").tag(1)
+                    Text("Online").tag(2)
+                }
+                .labelsHidden()
+                .frame(width: 140)
+            }
+
+            if recording.variants.count > 1 {
+                Picker(
+                    "Transcript version",
+                    selection: Binding(
+                        get: { recording.activeVariantID ?? recording.variants.first?.id },
+                        set: { newId in
+                            recording.activeVariantID = newId
+                            onFieldEdited()
+                            viewModel.refreshUsageMeter()
+                        }
+                    )
+                ) {
+                    ForEach(recording.variants.sorted(by: { $0.createdAt > $1.createdAt }), id: \.id) { v in
+                        Text(variantMenuLabel(v)).tag(Optional(v.id))
+                    }
+                }
+            }
+
             List {
-                ForEach(recording.segments.sorted(by: { $0.sortOrder < $1.sortOrder }), id: \.id) { seg in
+                ForEach(recording.activeSegmentsSorted(), id: \.id) { seg in
                     TranscriptSegmentRow(
                         segment: seg,
                         recording: recording,
@@ -366,8 +494,25 @@ private struct TranscriptDetailView: View {
                     .buttonStyle(EchoBorderedButtonStyle(prominent: true))
                 Button("Pause") { Task { await player.pause() } }
                     .buttonStyle(EchoBorderedButtonStyle(prominent: false))
+                Button("Re-transcribe") {
+                    Task {
+                        do {
+                            try await viewModel.reprocessSelectedRecording()
+                        } catch {
+                            viewModel.importError = error.localizedDescription
+                        }
+                    }
+                }
+                .buttonStyle(EchoBorderedButtonStyle(prominent: false))
+                .disabled(viewModel.isTranscriptionBusy)
             }
         }
+    }
+
+    private func variantMenuLabel(_ v: TranscriptVariant) -> String {
+        let m = v.processingMode.displayName
+        let t = v.createdAt.formatted(date: .abbreviated, time: .shortened)
+        return "\(m) · \(t)"
     }
 }
 

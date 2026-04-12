@@ -5,11 +5,22 @@ public actor ProcessingQueue {
     public struct Job: Identifiable, Equatable, Sendable {
         public let id: UUID
         public let sourceURL: URL
+        public let mode: ProcessingMode
+        /// When set, completed segments are appended as a new variant on this recording (re-transcribe).
+        public let mergeIntoRecordingID: UUID?
         public var state: ProcessingJobState
 
-        public init(id: UUID = UUID(), sourceURL: URL, state: ProcessingJobState = .queued) {
+        public init(
+            id: UUID = UUID(),
+            sourceURL: URL,
+            mode: ProcessingMode,
+            mergeIntoRecordingID: UUID? = nil,
+            state: ProcessingJobState = .queued
+        ) {
             self.id = id
             self.sourceURL = sourceURL
+            self.mode = mode
+            self.mergeIntoRecordingID = mergeIntoRecordingID
             self.state = state
         }
     }
@@ -21,21 +32,25 @@ public actor ProcessingQueue {
 
     private let limits: ProcessingLimits
     private let extract: AudioExtractionServicing
-    private let transcribe: TranscriptionServicing
+    private let offlineTranscribe: TranscriptionServicing
+    private let onlineTranscribe: TranscriptionServicing
     private let diarize: DiarizationServicing
 
     public var onStateChange: (@Sendable (UUID, ProcessingJobState) async -> Void)?
-    public var onCompleted: (@Sendable (UUID, [TimedTextSegment], URL, URL) async -> Void)?
+    public var onCompleted:
+        (@Sendable (UUID, [TimedTextSegment], URL, URL, ProcessingMode, UUID?) async -> Void)?
 
     public init(
         limits: ProcessingLimits = .default,
         extract: AudioExtractionServicing,
-        transcribe: TranscriptionServicing,
+        offlineTranscribe: TranscriptionServicing,
+        onlineTranscribe: TranscriptionServicing,
         diarize: DiarizationServicing
     ) {
         self.limits = limits
         self.extract = extract
-        self.transcribe = transcribe
+        self.offlineTranscribe = offlineTranscribe
+        self.onlineTranscribe = onlineTranscribe
         self.diarize = diarize
     }
 
@@ -44,12 +59,15 @@ public actor ProcessingQueue {
     }
 
     public func setOnCompleted(
-        _ handler: (@Sendable (UUID, [TimedTextSegment], URL, URL) async -> Void)?
+        _ handler:
+            (@Sendable (UUID, [TimedTextSegment], URL, URL, ProcessingMode, UUID?) async -> Void)?
     ) {
         onCompleted = handler
     }
 
-    public func enqueue(_ url: URL) async throws -> UUID {
+    public func enqueue(_ url: URL, mode: ProcessingMode, mergeIntoRecordingID: UUID? = nil) async throws
+        -> UUID
+    {
         let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
         let size = attrs[.size] as? Int64 ?? 0
         guard size <= limits.maxFileBytes else {
@@ -59,7 +77,7 @@ public actor ProcessingQueue {
         guard duration <= limits.maxDurationSeconds else {
             throw ProcessingQueueError.durationTooLong
         }
-        let job = Job(sourceURL: url)
+        let job = Job(sourceURL: url, mode: mode, mergeIntoRecordingID: mergeIntoRecordingID)
         pending.append(job)
         await pump()
         return job.id
@@ -104,7 +122,8 @@ public actor ProcessingQueue {
                 await notify(job.id, .cancelled)
                 return
             }
-            let raw = try await transcribe.transcribe(audioFileURL: audioURL) { p in
+            let transcriber = job.mode == .online ? onlineTranscribe : offlineTranscribe
+            let raw = try await transcriber.transcribe(audioFileURL: audioURL) { p in
                 Task {
                     await self.notify(job.id, .running(progress: 0.2 + p * 0.5))
                 }
@@ -115,7 +134,7 @@ public actor ProcessingQueue {
                 return
             }
             let finalSegs = try await diarize.diarize(segments: raw)
-            await onCompleted?(job.id, finalSegs, job.sourceURL, audioURL)
+            await onCompleted?(job.id, finalSegs, job.sourceURL, audioURL, job.mode, job.mergeIntoRecordingID)
             await notify(job.id, .completed)
         } catch is CancellationError {
             await notify(job.id, .cancelled)

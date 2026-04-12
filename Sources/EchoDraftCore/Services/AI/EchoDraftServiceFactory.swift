@@ -13,6 +13,13 @@ public enum EchoDraftServiceFactory {
         return MLXWhisperTranscriptionService()
     }
 
+    public static func makeOnlineTranscriptionService() -> TranscriptionServicing {
+        OpenAITranscriptionService(
+            baseURL: { EchoDraftUserSettings.storedOpenAIBaseURL() },
+            apiKey: { OpenAIAPIKeyStore.resolvedKey() }
+        )
+    }
+
     @MainActor
     public static func makeLLMService() -> LLMGenerating {
         if EchoDraftMLRuntime.useStubML {
@@ -23,5 +30,12 @@ public enum EchoDraftServiceFactory {
             return MLXLLMService(modelIdentifier: id)
         }
         return MLXLLMService()
+    }
+
+    public static func makeOnlineLLMService() -> LLMGenerating {
+        OpenAILLMService(
+            baseURL: { EchoDraftUserSettings.storedOpenAIBaseURL() },
+            apiKey: { OpenAIAPIKeyStore.resolvedKey() }
+        )
     }
 }

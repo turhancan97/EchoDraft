@@ -21,15 +21,19 @@ public struct JSONLibraryMigrator: Sendable {
         let legacy = try JSONDecoder().decode([LegacyRecording].self, from: data)
 
         for item in legacy {
+            let variant = TranscriptVariant(mode: .offline, createdAt: item.createdAt)
             let rec = Recording(
                 id: item.id,
                 title: item.title,
                 createdAt: item.createdAt,
                 sourceBookmarkData: item.sourceBookmarkData,
                 durationSeconds: item.durationSeconds,
-                searchText: item.searchText,
-                segments: []
+                searchText: "",
+                variants: [],
+                activeVariantID: variant.id,
+                processingModeOverrideRaw: nil
             )
+            variant.recording = rec
             var segs: [TranscriptSegment] = []
             for s in item.segments.sorted(by: { $0.sortOrder < $1.sortOrder }) {
                 let seg = TranscriptSegment(
@@ -40,10 +44,11 @@ public struct JSONLibraryMigrator: Sendable {
                     speakerLabel: s.speakerLabel,
                     sortOrder: s.sortOrder
                 )
-                seg.recording = rec
+                seg.variant = variant
                 segs.append(seg)
             }
-            rec.segments = segs
+            variant.segments = segs
+            rec.variants = [variant]
             rec.recomputeSearchText()
             modelContext.insert(rec)
         }
