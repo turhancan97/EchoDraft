@@ -34,7 +34,8 @@ public actor ProcessingQueue {
     private let extract: AudioExtractionServicing
     private let offlineTranscribe: TranscriptionServicing
     private let onlineTranscribe: TranscriptionServicing
-    private let diarize: DiarizationServicing
+    private let offlineDiarize: DiarizationServicing
+    private let onlineDiarize: DiarizationServicing
 
     public var onStateChange: (@Sendable (UUID, ProcessingJobState) async -> Void)?
     public var onCompleted:
@@ -45,13 +46,15 @@ public actor ProcessingQueue {
         extract: AudioExtractionServicing,
         offlineTranscribe: TranscriptionServicing,
         onlineTranscribe: TranscriptionServicing,
-        diarize: DiarizationServicing
+        offlineDiarize: DiarizationServicing,
+        onlineDiarize: DiarizationServicing
     ) {
         self.limits = limits
         self.extract = extract
         self.offlineTranscribe = offlineTranscribe
         self.onlineTranscribe = onlineTranscribe
-        self.diarize = diarize
+        self.offlineDiarize = offlineDiarize
+        self.onlineDiarize = onlineDiarize
     }
 
     public func setOnStateChange(_ handler: (@Sendable (UUID, ProcessingJobState) async -> Void)?) {
@@ -138,7 +141,8 @@ public actor ProcessingQueue {
                 await notify(job.id, .cancelled)
                 return
             }
-            let finalSegs = try await diarize.diarize(segments: raw)
+            let diarizeService = job.mode == .online ? onlineDiarize : offlineDiarize
+            let finalSegs = try await diarizeService.diarize(segments: raw)
             await onCompleted?(job.id, finalSegs, job.sourceURL, audioURL, job.mode, job.mergeIntoRecordingID)
             await notify(job.id, .completed)
         } catch is CancellationError {

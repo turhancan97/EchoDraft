@@ -15,7 +15,8 @@ public struct PauseBasedDiarizationService: DiarizationServicing {
                         startSeconds: seg.startSeconds,
                         endSeconds: seg.endSeconds,
                         text: seg.text,
-                        speakerIndex: speaker % 2
+                        speakerIndex: speaker % 2,
+                        speakerLabel: seg.speakerLabel
                     ))
                 continue
             }
@@ -30,7 +31,8 @@ public struct PauseBasedDiarizationService: DiarizationServicing {
                         startSeconds: t,
                         endSeconds: end,
                         text: txt + (i < pieces.count - 1 && !txt.hasSuffix(".") ? "." : ""),
-                        speakerIndex: speaker % 2
+                        speakerIndex: speaker % 2,
+                        speakerLabel: seg.speakerLabel
                     ))
                 speaker += 1
                 t = end

@@ -14,6 +14,9 @@ public enum OpenAIClientError: Error, LocalizedError, Sendable {
         case .invalidURL:
             return "Invalid OpenAI API URL."
         case .httpStatus(let code):
+            if code == 413 {
+                return "Audio upload too large for one request (HTTP 413). The app normally splits long files automatically — try again, or use a shorter or more compressed export."
+            }
             return "OpenAI API error (status \(code))."
         case .rateLimited(let s):
             if let s {
@@ -63,11 +66,14 @@ public struct TranscriptionSegmentDTO: Sendable {
     public var start: Double
     public var end: Double
     public var text: String
+    /// Raw speaker id from `diarized_json` (e.g. `SPEAKER_00`). Nil when the API omits it.
+    public var speakerKey: String?
 
-    public init(start: Double, end: Double, text: String) {
+    public init(start: Double, end: Double, text: String, speakerKey: String? = nil) {
         self.start = start
         self.end = end
         self.text = text
+        self.speakerKey = speakerKey
     }
 }
 
@@ -86,6 +92,16 @@ public struct ChatCompletionResult: Sendable {
 // MARK: - Live client
 
 public final class OpenAIClient: OpenAIClienting, @unchecked Sendable {
+    /// Default `URLSession` uses a ~60s per-request timeout, which fails on large uploads and long
+    /// `gpt-4o-transcribe-diarize` jobs. Transcription uses a session with multi-minute (up to 1h) limits.
+    private static let transcriptionSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 3600
+        config.timeoutIntervalForResource = 3600
+        config.waitsForConnectivity = true
+        return URLSession(configuration: config)
+    }()
+
     public init() {}
 
     public func transcribeAudio(
@@ -107,7 +123,11 @@ public final class OpenAIClient: OpenAIClienting, @unchecked Sendable {
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
         progress(0.1)
-        let (respData, response) = try await dataWithRetries(request: request, bodyFileURL: multipartFile)
+        let (respData, response) = try await dataWithRetries(
+            request: request,
+            bodyFileURL: multipartFile,
+            session: Self.transcriptionSession
+        )
         progress(0.92)
         guard let http = response as? HTTPURLResponse else {
             throw OpenAIClientError.noData
@@ -120,7 +140,7 @@ public final class OpenAIClient: OpenAIClienting, @unchecked Sendable {
             throw OpenAIClientError.httpStatus(http.statusCode)
         }
 
-        let decoded = try parseVerboseJSON(data: respData)
+        let decoded = try parseDiarizedJSON(data: respData)
         progress(1)
         return decoded
     }
@@ -170,7 +190,11 @@ public final class OpenAIClient: OpenAIClienting, @unchecked Sendable {
         return ChatCompletionResult(content: content, promptTokens: pt, completionTokens: ct)
     }
 
-    private func dataWithRetries(request: URLRequest, bodyFileURL: URL? = nil) async throws -> (Data, URLResponse) {
+    private func dataWithRetries(
+        request: URLRequest,
+        bodyFileURL: URL? = nil,
+        session: URLSession = .shared
+    ) async throws -> (Data, URLResponse) {
         var attempt = 0
         let maxAttempts = 4
         var delayNs: UInt64 = 500_000_000
@@ -178,9 +202,9 @@ public final class OpenAIClient: OpenAIClienting, @unchecked Sendable {
             attempt += 1
             let (data, response): (Data, URLResponse)
             if let bodyFileURL {
-                (data, response) = try await URLSession.shared.upload(for: request, fromFile: bodyFileURL)
+                (data, response) = try await session.upload(for: request, fromFile: bodyFileURL)
             } else {
-                (data, response) = try await URLSession.shared.data(for: request)
+                (data, response) = try await session.data(for: request)
             }
             guard let http = response as? HTTPURLResponse else {
                 throw OpenAIClientError.noData
@@ -237,15 +261,18 @@ public final class OpenAIClient: OpenAIClienting, @unchecked Sendable {
         try write("\r\n")
         try write("--\(boundary)\r\n")
         try write("Content-Disposition: form-data; name=\"model\"\r\n\r\n")
-        try write("whisper-1\r\n")
+        try write("gpt-4o-transcribe-diarize\r\n")
         try write("--\(boundary)\r\n")
         try write("Content-Disposition: form-data; name=\"response_format\"\r\n\r\n")
-        try write("verbose_json\r\n")
+        try write("diarized_json\r\n")
+        try write("--\(boundary)\r\n")
+        try write("Content-Disposition: form-data; name=\"chunking_strategy\"\r\n\r\n")
+        try write("auto\r\n")
         try write("--\(boundary)--\r\n")
         return tmp
     }
 
-    private func parseVerboseJSON(data: Data) throws -> TranscriptionResult {
+    private func parseDiarizedJSON(data: Data) throws -> TranscriptionResult {
         guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw OpenAIClientError.decodingFailed("root")
         }
@@ -256,14 +283,36 @@ public final class OpenAIClient: OpenAIClienting, @unchecked Sendable {
                 let st = s["start"] as? Double ?? 0
                 let en = s["end"] as? Double ?? st
                 let t = s["text"] as? String ?? ""
-                segs.append(TranscriptionSegmentDTO(start: st, end: en, text: t.trimmingCharacters(in: .whitespacesAndNewlines)))
+                let key = Self.normalizedSpeakerKey(s["speaker"])
+                segs.append(
+                    TranscriptionSegmentDTO(
+                        start: st,
+                        end: en,
+                        text: t.trimmingCharacters(in: .whitespacesAndNewlines),
+                        speakerKey: key
+                    )
+                )
             }
         }
         if segs.isEmpty, !text.isEmpty {
             let dur = obj["duration"] as? Double
-            segs.append(TranscriptionSegmentDTO(start: 0, end: dur ?? 0, text: text))
+            segs.append(TranscriptionSegmentDTO(start: 0, end: dur ?? 0, text: text, speakerKey: "0"))
         }
         let dur = obj["duration"] as? Double
         return TranscriptionResult(text: text, segments: segs, durationSeconds: dur)
+    }
+
+    private static func normalizedSpeakerKey(_ value: Any?) -> String? {
+        guard let value else { return nil }
+        if let s = value as? String, !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return s
+        }
+        if let n = value as? Int {
+            return String(n)
+        }
+        if let d = value as? Double, d.isFinite {
+            return String(Int(d))
+        }
+        return nil
     }
 }

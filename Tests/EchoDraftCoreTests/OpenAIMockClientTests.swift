@@ -43,6 +43,33 @@ struct MockOpenAIClient: OpenAIClienting {
     let segs = try await svc.transcribe(audioFileURL: tmp) { _ in }
     #expect(segs.count == 1)
     #expect(segs[0].text == "hello")
+    #expect(segs[0].speakerLabel == "Speaker 1")
+    try? FileManager.default.removeItem(at: tmp)
+}
+
+@Test func openAITranscriptionMapsDistinctSpeakers() async throws {
+    var mock = MockOpenAIClient()
+    mock.transcribeResult = TranscriptionResult(
+        text: "a b",
+        segments: [
+            TranscriptionSegmentDTO(start: 0, end: 1, text: "a", speakerKey: "SPK_A"),
+            TranscriptionSegmentDTO(start: 1, end: 2, text: "b", speakerKey: "SPK_B"),
+        ],
+        durationSeconds: 2
+    )
+    let svc = OpenAITranscriptionService(
+        client: mock,
+        baseURL: { "https://api.openai.com" },
+        apiKey: { "sk-test" }
+    )
+    let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("t2.m4a")
+    try Data([0]).write(to: tmp)
+    let segs = try await svc.transcribe(audioFileURL: tmp) { _ in }
+    #expect(segs.count == 2)
+    #expect(segs[0].speakerLabel == "Speaker 1")
+    #expect(segs[1].speakerLabel == "Speaker 2")
+    #expect(segs[0].speakerIndex == 0)
+    #expect(segs[1].speakerIndex == 1)
     try? FileManager.default.removeItem(at: tmp)
 }
 
@@ -72,8 +99,9 @@ struct MockOpenAIClient: OpenAIClienting {
     #expect(body.count > audioBytes.count)
     #expect(body.containsSubsequence(Data("--\(boundary)\r\n".utf8)))
     #expect(body.containsSubsequence(audioBytes))
-    #expect(body.containsSubsequence(Data("name=\"model\"\r\n\r\nwhisper-1\r\n".utf8)))
-    #expect(body.containsSubsequence(Data("name=\"response_format\"\r\n\r\nverbose_json\r\n".utf8)))
+    #expect(body.containsSubsequence(Data("name=\"model\"\r\n\r\ngpt-4o-transcribe-diarize\r\n".utf8)))
+    #expect(body.containsSubsequence(Data("name=\"response_format\"\r\n\r\ndiarized_json\r\n".utf8)))
+    #expect(body.containsSubsequence(Data("name=\"chunking_strategy\"\r\n\r\nauto\r\n".utf8)))
 }
 
 private extension Data {

@@ -3,7 +3,8 @@ import MLX
 import MLXAudioCore
 import MLXAudioSTT
 
-/// MLXAudio STT (default: Qwen3-ASR) behind ``TranscriptionServicing``.
+/// MLXAudio STT via ``Qwen3ASRModel`` (mlx-audio-swift). ``modelRepo`` must be a Qwen3-ASR–compatible Hub id
+/// (e.g. ``mlx-community/Qwen3-ASR-0.6B-4bit``). Other MLX ASR families (e.g. VibeVoice on Python mlx-audio only) are not loaded here.
 public final class MLXWhisperTranscriptionService: TranscriptionServicing, @unchecked Sendable {
     /// Serialized by ``ProcessingQueue`` (one active job); no concurrent loads expected.
     private var cachedModel: Qwen3ASRModel?

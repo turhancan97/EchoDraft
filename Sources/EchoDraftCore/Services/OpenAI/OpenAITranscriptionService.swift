@@ -11,7 +11,7 @@ public enum OpenAITranscriptionError: Error, LocalizedError {
     }
 }
 
-/// Whisper API transcription; output segments use speaker index 0 until diarization runs.
+/// OpenAI `gpt-4o-transcribe-diarize` transcription; long files are split to stay under the API size limit (HTTP 413).
 public final class OpenAITranscriptionService: TranscriptionServicing, @unchecked Sendable {
     private let client: OpenAIClienting
     private let baseURL: @Sendable () -> String
@@ -34,38 +34,76 @@ public final class OpenAITranscriptionService: TranscriptionServicing, @unchecke
         guard let key = apiKey()?.trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty else {
             throw OpenAITranscriptionError.noAPIKey
         }
-        progress(0.05)
-        let result = try await client.transcribeAudio(
-            fileURL: audioFileURL,
-            apiKey: key,
-            baseURL: baseURL(),
-            progress: { p in
-                progress(0.05 + p * 0.94)
+        progress(0.02)
+
+        let chunks = try await OpenAIAudioChunkExporter.makeChunksForUpload(audioFileURL: audioFileURL)
+        defer {
+            for c in chunks where c.isTemporary {
+                try? FileManager.default.removeItem(at: c.fileURL)
             }
-        )
+        }
+
+        let baseURL = baseURL()
+        var merged: [TimedTextSegment] = []
+        let total = max(1, chunks.count)
+
+        var speakerKeyToIndex: [String: Int] = [:]
+        var nextSpeakerIndex = 0
+
+        func speakerIndex(forKey key: String) -> Int {
+            if let i = speakerKeyToIndex[key] { return i }
+            let i = nextSpeakerIndex
+            nextSpeakerIndex += 1
+            speakerKeyToIndex[key] = i
+            return i
+        }
+
+        for (chunkIdx, chunk) in chunks.enumerated() {
+            let chunkIndex = chunkIdx
+            let result = try await client.transcribeAudio(
+                fileURL: chunk.fileURL,
+                apiKey: key,
+                baseURL: baseURL,
+                progress: { p in
+                    let slice = (Double(chunkIndex) + p) / Double(total)
+                    progress(0.02 + slice * 0.96)
+                }
+            )
+
+            let offset = chunk.timeOffsetSeconds
+            var hadSegments = false
+            for s in result.segments where !s.text.isEmpty {
+                hadSegments = true
+                let rawKey = s.speakerKey ?? "0"
+                let spk = speakerIndex(forKey: rawKey)
+                let label = "Speaker \(spk + 1)"
+                merged.append(
+                    TimedTextSegment(
+                        startSeconds: s.start + offset,
+                        endSeconds: max(s.start, s.end) + offset,
+                        text: s.text,
+                        speakerIndex: spk,
+                        speakerLabel: label
+                    )
+                )
+            }
+
+            if !hadSegments, !result.text.isEmpty {
+                let end = (result.durationSeconds ?? 0) + offset
+                let spk = speakerIndex(forKey: "0")
+                merged.append(
+                    TimedTextSegment(
+                        startSeconds: offset,
+                        endSeconds: end,
+                        text: result.text,
+                        speakerIndex: spk,
+                        speakerLabel: "Speaker \(spk + 1)"
+                    )
+                )
+            }
+        }
+
         progress(1)
-        var out: [TimedTextSegment] = []
-        for s in result.segments where !s.text.isEmpty {
-            out.append(
-                TimedTextSegment(
-                    startSeconds: s.start,
-                    endSeconds: max(s.start, s.end),
-                    text: s.text,
-                    speakerIndex: 0
-                )
-            )
-        }
-        if out.isEmpty, !result.text.isEmpty {
-            let end = result.durationSeconds ?? 0
-            out.append(
-                TimedTextSegment(
-                    startSeconds: 0,
-                    endSeconds: end,
-                    text: result.text,
-                    speakerIndex: 0
-                )
-            )
-        }
-        return out
+        return merged
     }
 }

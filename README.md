@@ -20,7 +20,7 @@
 
 ## What is EchoDraft?
 
-EchoDraft is an **open-source, native Swift/SwiftUI** app for **macOS 15+**. It ingests audio and video files, **extracts audio** when needed, runs **local speech-to-text** (MLX / Qwen3-ASR by default), applies **lightweight speaker segmentation**, and lets you **edit transcripts**, **generate summaries**, and **ask questions** over the text — all with **SwiftData** for a searchable local library.
+EchoDraft is an **open-source, native Swift/SwiftUI** app for **macOS 15+**. It ingests audio and video files, **extracts audio** when needed, runs **local speech-to-text** via **[mlx-audio-swift](https://github.com/Blaizzy/mlx-audio-swift)** (**Qwen3-ASR** by default), applies **lightweight speaker segmentation** offline, and lets you **edit transcripts**, **generate summaries**, and **ask questions** over the text — all with **SwiftData** for a searchable local library.
 
 - **Privacy-first:** Core processing runs on your machine. Model weights are downloaded **once** from Hugging Face into the standard cache, then reused **offline** (see [Data & privacy](#data--privacy)).
 - **Apple Silicon friendly:** MLX inference is tuned for M-series Macs; Intel is not a primary target for distributed builds.
@@ -43,7 +43,7 @@ Product detail and roadmap notes live in [.agent/prd.md](.agent/prd.md) and [.ag
 
 | Area | Description |
 |------|-------------|
-| **Speech-to-text** | Default: **Qwen3-ASR** (mlx-audio). Override with `ECHODRAFT_STT_MODEL`. |
+| **Speech-to-text** | Default: **Qwen3-ASR** via **mlx-audio-swift** (`MLXAudioSTT`). Override hub id with `ECHODRAFT_STT_MODEL` (must stay **Qwen3-ASR–compatible**; see [Offline STT models](#offline-stt-models)). |
 | **Summaries** | Template styles (e.g. bullets, executive) via a small local **LLM** (default: Phi-3.5-class). |
 | **Chat** | Ask questions grounded in the current transcript. |
 | **Stub mode** | `ECHODRAFT_USE_STUB_ML=1` for UI/dev without loading MLX (CI-friendly). |
@@ -170,12 +170,20 @@ EchoDraft/
 
 ## Configuration
 
+### Offline STT models
+
+Offline transcription uses **[mlx-audio-swift](https://github.com/Blaizzy/mlx-audio-swift)** and loads checkpoints with the **Qwen3-ASR** implementation (`Qwen3ASRModel`). The default Hugging Face repo is **[mlx-community/Qwen3-ASR-0.6B-4bit](https://huggingface.co/mlx-community/Qwen3-ASR-0.6B-4bit)**.
+
+**[mlx-community/VibeVoice-ASR-bf16](https://huggingface.co/mlx-community/VibeVoice-ASR-bf16)** (Microsoft VibeVoice, ~**8B** params, [Python mlx-audio](https://github.com/Blaizzy/mlx-audio) CLI/API on the model card) is **not** a drop-in replacement: it is a **different architecture**, and **mlx-audio-swift does not include a VibeVoice loader** today. Pointing `ECHODRAFT_STT_MODEL` at that repo **will not work** inside EchoDraft until upstream Swift support exists (or a dedicated integration is added). For VibeVoice outside the app, use the **Python** instructions on the [model card](https://huggingface.co/mlx-community/VibeVoice-ASR-bf16). Expect **large downloads** and **high unified memory** use on Apple Silicon.
+
+`ECHODRAFT_STT_MODEL` must reference a **Qwen3-ASR–compatible** MLX hub repository (same family as the default).
+
 Environment variables (optional):
 
 | Variable | Effect |
 |----------|--------|
 | `ECHODRAFT_USE_STUB_ML=1` | Stub STT + LLM (fast UI/dev; no MLX). |
-| `ECHODRAFT_STT_MODEL` | Hugging Face repo id for Qwen3-ASR (default `mlx-community/Qwen3-ASR-0.6B-4bit`). |
+| `ECHODRAFT_STT_MODEL` | Hugging Face repo id for **Qwen3-ASR** (mlx-audio-swift). Default `mlx-community/Qwen3-ASR-0.6B-4bit`. |
 | `ECHODRAFT_STT_CHUNK_DURATION_SEC` | Max chunk length in seconds for long audio (default 1200). **Lower** (e.g. `180`–`300`) **reduces peak RAM**. |
 | `ECHODRAFT_STT_MIN_CHUNK_DURATION_SEC` | Minimum chunk seconds (default `1`). |
 | `ECHODRAFT_STT_MAX_TOKENS` | Decoder cap (default 8192). |
@@ -191,7 +199,7 @@ Set in **Xcode → Scheme → Run → Arguments → Environment Variables**, or 
 ## Data & privacy
 
 - **Library:** SwiftData store (system-managed location). Legacy `library.json` may be **migrated once** into SwiftData and renamed (see app migration logic).  
-- **Models (offline mode):** STT/LLM weights download from **Hugging Face** on **first use** per model, then load from the **hub cache** offline. Third-party MLX stacks perform hub/cache access as documented upstream.  
+- **Models (offline mode):** STT/LLM weights download from **Hugging Face** on **first use** per model, then load from the **hub cache** offline. Offline STT follows **mlx-audio-swift**’s supported architectures (default **Qwen3-ASR**). Third-party MLX stacks perform hub/cache access as documented upstream.  
 - **Online mode (optional):** If you enable **Online** processing and add an OpenAI-compatible API key, **audio and text are sent to that provider** for transcription and for summary/chat, under that provider’s terms. EchoDraft does not operate its own inference servers; traffic is **direct from your Mac** to the API you configure. See OpenAI’s [API data documentation](https://platform.openai.com/docs/guides/your-data) for current policies (informational only).
 - **Temporary processing files:** During transcription/export, EchoDraft may create temporary files under the system temp directory and removes them on normal success/failure paths (crash leftovers may remain until the OS cleans temp space).
 - **Telemetry (opt-in):** Online failure logs are local OSLog diagnostics only and redact provider response bodies.

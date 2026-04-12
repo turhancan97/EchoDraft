@@ -27,7 +27,8 @@ struct EchoDraftApp: App {
             extract: AudioExtractionService(),
             offlineTranscribe: EchoDraftServiceFactory.makeTranscriptionService(),
             onlineTranscribe: EchoDraftServiceFactory.makeOnlineTranscriptionService(),
-            diarize: PauseBasedDiarizationService()
+            offlineDiarize: PauseBasedDiarizationService(),
+            onlineDiarize: PassthroughDiarizationService()
         )
         _viewModel = State(
             initialValue: AppViewModel(

@@ -178,7 +178,7 @@ public final class AppViewModel {
             var order = 0
             var segs: [TranscriptSegment] = []
             for s in segments {
-                let spk = "Speaker \(s.speakerIndex + 1)"
+                let spk = s.speakerLabel ?? "Speaker \(s.speakerIndex + 1)"
                 let seg = TranscriptSegment(
                     startSeconds: s.startSeconds,
                     endSeconds: s.endSeconds,
@@ -236,7 +236,7 @@ public final class AppViewModel {
         var order = 0
         var segs: [TranscriptSegment] = []
         for s in segments {
-            let spk = "Speaker \(s.speakerIndex + 1)"
+            let spk = s.speakerLabel ?? "Speaker \(s.speakerIndex + 1)"
             let seg = TranscriptSegment(
                 startSeconds: s.startSeconds,
                 endSeconds: s.endSeconds,
@@ -282,7 +282,7 @@ public final class AppViewModel {
     private func usageJSON(for mode: ProcessingMode, segments: [TimedTextSegment]) -> String? {
         guard mode == .online else { return nil }
         let minutes = (segments.map(\.endSeconds).max() ?? 0) / 60.0
-        // Rough Whisper estimate ($0.006/min as of common public pricing — informational only).
+        // Rough gpt-4o family transcribe estimate ($0.006/min placeholder — informational only).
         let est = minutes * 0.006
         let dict: [String: Double] = ["audioMinutes": minutes, "estimatedTranscribeUSD": est]
         if let data = try? JSONEncoder().encode(dict),

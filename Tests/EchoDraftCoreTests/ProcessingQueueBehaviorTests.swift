@@ -16,7 +16,8 @@ import Testing
         extract: TestExtractor(extractedAudioURL: extractedURL),
         offlineTranscribe: TestTranscriber(state: transcriberState, shouldThrow: false),
         onlineTranscribe: TestTranscriber(state: transcriberState, shouldThrow: false),
-        diarize: PassthroughDiarizer()
+        offlineDiarize: PassthroughDiarizationService(),
+        onlineDiarize: PassthroughDiarizationService()
     )
     let recorder = QueueStateRecorder()
     await queue.setOnStateChange { _, state in
@@ -57,7 +58,8 @@ import Testing
         extract: TestExtractor(extractedAudioURL: extractedURL),
         offlineTranscribe: TestTranscriber(state: TestTranscriberState(), shouldThrow: false),
         onlineTranscribe: TestTranscriber(state: TestTranscriberState(), shouldThrow: false),
-        diarize: PassthroughDiarizer()
+        offlineDiarize: PassthroughDiarizationService(),
+        onlineDiarize: PassthroughDiarizationService()
     )
 
     _ = try await queue.enqueue(sourceURL, mode: .offline)
@@ -79,7 +81,8 @@ import Testing
         extract: TestExtractor(extractedAudioURL: extractedURL),
         offlineTranscribe: TestTranscriber(state: TestTranscriberState(), shouldThrow: true),
         onlineTranscribe: TestTranscriber(state: TestTranscriberState(), shouldThrow: true),
-        diarize: PassthroughDiarizer()
+        offlineDiarize: PassthroughDiarizationService(),
+        onlineDiarize: PassthroughDiarizationService()
     )
     let recorder = QueueStateRecorder()
     await queue.setOnStateChange { _, state in
@@ -159,12 +162,6 @@ private struct TestTranscriber: TranscriptionServicing {
             throw TestError()
         }
         return [TimedTextSegment(startSeconds: 0, endSeconds: 1, text: "ok", speakerIndex: 0)]
-    }
-}
-
-private struct PassthroughDiarizer: DiarizationServicing {
-    func diarize(segments: [TimedTextSegment]) async throws -> [TimedTextSegment] {
-        segments
     }
 }
 
