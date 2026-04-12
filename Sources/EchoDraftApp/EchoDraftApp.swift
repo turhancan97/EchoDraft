@@ -71,7 +71,7 @@ struct EchoDraftApp: App {
                 .resizable()
                 .interpolation(.high)
                 .scaledToFit()
-                .frame(width: 18, height: 18)
+                .frame(width: 20, height: 20)
                 .accessibilityLabel("EchoDraft")
         }
         .menuBarExtraStyle(.menu)

@@ -43,6 +43,7 @@ public final class ExportService: ExportServicing {
         let fm = FileManager.default
         let work = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try fm.createDirectory(at: work, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: work) }
         let mdURL = work.appendingPathComponent("transcript.md")
         try markdown(for: recording).write(to: mdURL, atomically: true, encoding: .utf8)
         if let audioURL, fm.fileExists(atPath: audioURL.path) {

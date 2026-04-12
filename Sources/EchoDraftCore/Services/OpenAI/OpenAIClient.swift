@@ -4,7 +4,7 @@ import Foundation
 
 public enum OpenAIClientError: Error, LocalizedError, Sendable {
     case invalidURL
-    case httpStatus(Int, String)
+    case httpStatus(Int)
     case rateLimited(retryAfterSeconds: Double?)
     case decodingFailed(String)
     case noData
@@ -13,8 +13,8 @@ public enum OpenAIClientError: Error, LocalizedError, Sendable {
         switch self {
         case .invalidURL:
             return "Invalid OpenAI API URL."
-        case .httpStatus(let code, let body):
-            return "OpenAI API error (\(code)): \(body.prefix(200))"
+        case .httpStatus(let code):
+            return "OpenAI API error (status \(code))."
         case .rateLimited(let s):
             if let s {
                 return "Rate limited. Retry after \(Int(s)) seconds."
@@ -95,32 +95,19 @@ public final class OpenAIClient: OpenAIClienting, @unchecked Sendable {
         progress: @escaping @Sendable (Double) -> Void
     ) async throws -> TranscriptionResult {
         let endpoint = try Self.joinBase(baseURL, path: "/v1/audio/transcriptions")
-        let data = try Data(contentsOf: fileURL)
         let boundary = "Boundary-\(UUID().uuidString)"
-        var body = Data()
-        func append(_ s: String) { body.append(Data(s.utf8)) }
-
-        append("--\(boundary)\r\n")
-        append("Content-Disposition: form-data; name=\"file\"; filename=\"audio.m4a\"\r\n")
-        append("Content-Type: audio/m4a\r\n\r\n")
-        body.append(data)
-        append("\r\n")
-        append("--\(boundary)\r\n")
-        append("Content-Disposition: form-data; name=\"model\"\r\n\r\n")
-        append("whisper-1\r\n")
-        append("--\(boundary)\r\n")
-        append("Content-Disposition: form-data; name=\"response_format\"\r\n\r\n")
-        append("verbose_json\r\n")
-        append("--\(boundary)--\r\n")
+        let multipartFile = try Self.createMultipartUploadFile(audioFileURL: fileURL, boundary: boundary)
+        defer {
+            try? FileManager.default.removeItem(at: multipartFile)
+        }
 
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        request.httpBody = body
 
         progress(0.1)
-        let (respData, response) = try await dataWithRetries(request: request)
+        let (respData, response) = try await dataWithRetries(request: request, bodyFileURL: multipartFile)
         progress(0.92)
         guard let http = response as? HTTPURLResponse else {
             throw OpenAIClientError.noData
@@ -130,8 +117,7 @@ public final class OpenAIClient: OpenAIClienting, @unchecked Sendable {
             throw OpenAIClientError.rateLimited(retryAfterSeconds: retry)
         }
         guard (200 ... 299).contains(http.statusCode) else {
-            let msg = String(data: respData, encoding: .utf8) ?? ""
-            throw OpenAIClientError.httpStatus(http.statusCode, msg)
+            throw OpenAIClientError.httpStatus(http.statusCode)
         }
 
         let decoded = try parseVerboseJSON(data: respData)
@@ -165,8 +151,7 @@ public final class OpenAIClient: OpenAIClienting, @unchecked Sendable {
             throw OpenAIClientError.rateLimited(retryAfterSeconds: retry)
         }
         guard (200 ... 299).contains(http.statusCode) else {
-            let msg = String(data: data, encoding: .utf8) ?? ""
-            throw OpenAIClientError.httpStatus(http.statusCode, msg)
+            throw OpenAIClientError.httpStatus(http.statusCode)
         }
         guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
             let choices = obj["choices"] as? [[String: Any]],
@@ -185,13 +170,18 @@ public final class OpenAIClient: OpenAIClienting, @unchecked Sendable {
         return ChatCompletionResult(content: content, promptTokens: pt, completionTokens: ct)
     }
 
-    private func dataWithRetries(request: URLRequest) async throws -> (Data, URLResponse) {
+    private func dataWithRetries(request: URLRequest, bodyFileURL: URL? = nil) async throws -> (Data, URLResponse) {
         var attempt = 0
         let maxAttempts = 4
         var delayNs: UInt64 = 500_000_000
         while true {
             attempt += 1
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response): (Data, URLResponse)
+            if let bodyFileURL {
+                (data, response) = try await URLSession.shared.upload(for: request, fromFile: bodyFileURL)
+            } else {
+                (data, response) = try await URLSession.shared.data(for: request)
+            }
             guard let http = response as? HTTPURLResponse else {
                 throw OpenAIClientError.noData
             }
@@ -215,6 +205,44 @@ public final class OpenAIClient: OpenAIClienting, @unchecked Sendable {
         let full = "\(b)/\(p)"
         guard let url = URL(string: full) else { throw OpenAIClientError.invalidURL }
         return url
+    }
+
+    static func createMultipartUploadFile(audioFileURL: URL, boundary: String) throws -> URL {
+        let fm = FileManager.default
+        let tmp = fm.temporaryDirectory.appendingPathComponent("echodraft-openai-upload-\(UUID().uuidString).tmp")
+        fm.createFile(atPath: tmp.path, contents: nil)
+        let writer = try FileHandle(forWritingTo: tmp)
+        defer {
+            try? writer.close()
+        }
+
+        func write(_ text: String) throws {
+            try writer.write(contentsOf: Data(text.utf8))
+        }
+
+        try write("--\(boundary)\r\n")
+        try write("Content-Disposition: form-data; name=\"file\"; filename=\"audio.m4a\"\r\n")
+        try write("Content-Type: audio/m4a\r\n\r\n")
+
+        let reader = try FileHandle(forReadingFrom: audioFileURL)
+        defer {
+            try? reader.close()
+        }
+        while true {
+            let chunk = try reader.read(upToCount: 64 * 1024) ?? Data()
+            if chunk.isEmpty { break }
+            try writer.write(contentsOf: chunk)
+        }
+
+        try write("\r\n")
+        try write("--\(boundary)\r\n")
+        try write("Content-Disposition: form-data; name=\"model\"\r\n\r\n")
+        try write("whisper-1\r\n")
+        try write("--\(boundary)\r\n")
+        try write("Content-Disposition: form-data; name=\"response_format\"\r\n\r\n")
+        try write("verbose_json\r\n")
+        try write("--\(boundary)--\r\n")
+        return tmp
     }
 
     private func parseVerboseJSON(data: Data) throws -> TranscriptionResult {

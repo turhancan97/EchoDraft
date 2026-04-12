@@ -115,8 +115,13 @@ public actor ProcessingQueue {
         }
         await notify(job.id, .running(progress: 0))
         cancelled = false
+        var extractedAudioURL: URL?
+        defer {
+            Self.cleanupTemporaryAudioArtifact(at: extractedAudioURL)
+        }
         do {
             let audioURL = try await extract.extractAudioToTemporaryFile(from: job.sourceURL)
+            extractedAudioURL = audioURL
             try await waitWhilePaused(jobID: job.id)
             if cancelled {
                 await notify(job.id, .cancelled)
@@ -145,6 +150,9 @@ public actor ProcessingQueue {
 
     private func waitWhilePaused(jobID: UUID) async throws {
         while paused {
+            if cancelled {
+                throw CancellationError()
+            }
             await notify(jobID, .paused)
             try await Task.sleep(nanoseconds: 200_000_000)
         }
@@ -152,6 +160,13 @@ public actor ProcessingQueue {
 
     private func notify(_ jobID: UUID, _ state: ProcessingJobState) async {
         await onStateChange?(jobID, state)
+    }
+
+    private static func cleanupTemporaryAudioArtifact(at url: URL?) {
+        guard let url else { return }
+        let fm = FileManager.default
+        try? fm.removeItem(at: url)
+        try? fm.removeItem(at: url.deletingLastPathComponent())
     }
 }
 

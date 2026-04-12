@@ -193,6 +193,8 @@ Set in **Xcode → Scheme → Run → Arguments → Environment Variables**, or 
 - **Library:** SwiftData store (system-managed location). Legacy `library.json` may be **migrated once** into SwiftData and renamed (see app migration logic).  
 - **Models (offline mode):** STT/LLM weights download from **Hugging Face** on **first use** per model, then load from the **hub cache** offline. Third-party MLX stacks perform hub/cache access as documented upstream.  
 - **Online mode (optional):** If you enable **Online** processing and add an OpenAI-compatible API key, **audio and text are sent to that provider** for transcription and for summary/chat, under that provider’s terms. EchoDraft does not operate its own inference servers; traffic is **direct from your Mac** to the API you configure. See OpenAI’s [API data documentation](https://platform.openai.com/docs/guides/your-data) for current policies (informational only).
+- **Temporary processing files:** During transcription/export, EchoDraft may create temporary files under the system temp directory and removes them on normal success/failure paths (crash leftovers may remain until the OS cleans temp space).
+- **Telemetry (opt-in):** Online failure logs are local OSLog diagnostics only and redact provider response bodies.
 
 ---
 
