@@ -86,6 +86,14 @@ You can switch the app to **Online** processing and use your **own OpenAI API ke
 
 **[Download the latest DMG from GitHub Releases](https://github.com/turhancan97/EchoDraft/releases/latest)** (when published).
 
+**Unsigned DMG (default CI builds):** If macOS says Apple **could not verify** the app or that it **might contain malware**, copy **EchoDraft** to **Applications**, then clear the download quarantine and try again (adjust the path if you put the app somewhere else):
+
+```bash
+xattr -cr /Applications/EchoDraft.app
+```
+
+You may still need **right-click → Open** the first time. For background and notarized releases, see [First launch](#first-launch-notarized--outside-mac-app-store).
+
 Or install from a **Homebrew tap** you maintain (after publishing the cask):
 
 ```bash
@@ -104,13 +112,13 @@ See [packaging/homebrew/README.md](packaging/homebrew/README.md) for updating `v
 
 ### First launch (notarized / outside Mac App Store)
 
-If macOS blocks the app because it was downloaded from the internet, you can clear quarantine once (adjust the path if you moved the app):
+If macOS blocks the app (download quarantine, or messages like *unable to confirm that this app does not contain malware*), clear quarantine on the installed `.app` once (adjust the path if you moved it):
 
 ```bash
 xattr -cr /Applications/EchoDraft.app
 ```
 
-Then **right-click → Open** the first time. Prefer **signed & notarized** builds for public distribution; see [packaging/README.md](packaging/README.md) and [packaging/DISTRIBUTION.md](packaging/DISTRIBUTION.md).
+Then **right-click → Open** the first time if needed. Prefer **signed & notarized** builds for public distribution; see [packaging/README.md](packaging/README.md) and [packaging/DISTRIBUTION.md](packaging/DISTRIBUTION.md).
 
 ---
 
