@@ -19,9 +19,7 @@
 ## Demo
 
 <p align="center">
-  <video src="assets/demo.mp4" controls playsinline width="720">
-    <a href="assets/demo.mp4">Play demo video (MP4)</a>
-  </video>
+  <img src="assets/demo.gif" width="720" alt="EchoDraft demo screen recording">
 </p>
 
 ---
