@@ -1,10 +1,15 @@
 import Foundation
 
-/// Assigns alternating speakers on sentence-like boundaries (placeholder until MLX diarization is wired).
+/// Offline diarization: alternates speakers on sentence-like boundaries (period splits); fast and on-device.
 public struct PauseBasedDiarizationService: DiarizationServicing {
     public init() {}
 
-    public func diarize(segments: [TimedTextSegment]) async throws -> [TimedTextSegment] {
+    public func diarize(
+        segments: [TimedTextSegment],
+        audioFileURL: URL,
+        progress: @escaping @Sendable (Double) -> Void
+    ) async throws -> [TimedTextSegment] {
+        progress(0.5)
         var out: [TimedTextSegment] = []
         var speaker = 0
         for seg in segments {
@@ -38,7 +43,11 @@ public struct PauseBasedDiarizationService: DiarizationServicing {
                 t = end
             }
         }
-        if out.isEmpty { return segments }
+        if out.isEmpty {
+            progress(1)
+            return segments
+        }
+        progress(1)
         return out
     }
 }

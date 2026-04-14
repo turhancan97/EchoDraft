@@ -194,13 +194,18 @@ public struct RootView: View {
         switch s {
         case .queued:
             return "Queued…"
-        case .running(let p) where p < 0.25:
+        case .running(let p) where p < 0.12:
             return "Preparing audio…"
-        case .running(let p) where p < 0.75:
+        case .running(let p) where p < 0.52:
             if viewModel.activeTranscriptionMode == .online {
                 return "Transcribing (OpenAI)…"
             }
             return "Transcribing (on-device)…"
+        case .running(let p) where p < 0.88:
+            if viewModel.activeTranscriptionMode == .offline {
+                return "Diarizing speakers…"
+            }
+            return "Finishing…"
         case .running:
             return "Finishing…"
         case .paused:

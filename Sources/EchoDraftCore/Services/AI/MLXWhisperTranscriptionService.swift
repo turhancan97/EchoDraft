@@ -37,6 +37,10 @@ public final class MLXWhisperTranscriptionService: TranscriptionServicing, @unch
         return segments
     }
 
+    public func releaseTranscriptionResources() async {
+        cachedModel = nil
+    }
+
     /// Applies optional ``ProcessInfo`` overrides for RAM/latency tradeoffs (see README).
     private static func effectiveSTTParameters(from defaults: STTGenerateParameters) -> STTGenerateParameters {
         let env = ProcessInfo.processInfo.environment

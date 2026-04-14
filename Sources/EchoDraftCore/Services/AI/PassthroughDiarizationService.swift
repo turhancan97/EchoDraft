@@ -4,7 +4,12 @@ import Foundation
 public struct PassthroughDiarizationService: DiarizationServicing {
     public init() {}
 
-    public func diarize(segments: [TimedTextSegment]) async throws -> [TimedTextSegment] {
-        segments
+    public func diarize(
+        segments: [TimedTextSegment],
+        audioFileURL: URL,
+        progress: @escaping @Sendable (Double) -> Void
+    ) async throws -> [TimedTextSegment] {
+        progress(1)
+        return segments
     }
 }

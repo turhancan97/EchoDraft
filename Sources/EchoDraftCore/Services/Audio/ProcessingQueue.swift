@@ -133,8 +133,11 @@ public actor ProcessingQueue {
             let transcriber = job.mode == .online ? onlineTranscribe : offlineTranscribe
             let raw = try await transcriber.transcribe(audioFileURL: audioURL) { p in
                 Task {
-                    await self.notify(job.id, .running(progress: 0.2 + p * 0.5))
+                    await self.notify(job.id, .running(progress: 0.1 + p * 0.4))
                 }
+            }
+            if job.mode == .offline {
+                await offlineTranscribe.releaseTranscriptionResources()
             }
             try await waitWhilePaused(jobID: job.id)
             if cancelled {
@@ -142,7 +145,15 @@ public actor ProcessingQueue {
                 return
             }
             let diarizeService = job.mode == .online ? onlineDiarize : offlineDiarize
-            let finalSegs = try await diarizeService.diarize(segments: raw)
+            let finalSegs = try await diarizeService.diarize(
+                segments: raw,
+                audioFileURL: audioURL,
+                progress: { p in
+                    Task {
+                        await self.notify(job.id, .running(progress: 0.5 + p * 0.35))
+                    }
+                }
+            )
             await onCompleted?(job.id, finalSegs, job.sourceURL, audioURL, job.mode, job.mergeIntoRecordingID)
             await notify(job.id, .completed)
         } catch is CancellationError {

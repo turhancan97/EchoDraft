@@ -20,6 +20,10 @@ public enum EchoDraftServiceFactory {
         )
     }
 
+    public static func makeOfflineDiarizationService() -> DiarizationServicing {
+        PauseBasedDiarizationService()
+    }
+
     @MainActor
     public static func makeLLMService() -> LLMGenerating {
         if EchoDraftMLRuntime.useStubML {

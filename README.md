@@ -13,14 +13,22 @@
 </p>
 
 <p align="center">
-  <a href="#download">Download</a> · <a href="#features">Features</a> · <a href="#how-it-works">How it works</a> · <a href="#building-from-source">Build</a> · <a href="#configuration">Configuration</a> · <a href="#data--privacy">Privacy</a>
+  <a href="#demo">Demo</a> · <a href="#download">Download</a> · <a href="#features">Features</a> · <a href="#how-it-works">How it works</a> · <a href="#building-from-source">Build</a> · <a href="#configuration">Configuration</a> · <a href="#data--privacy">Privacy</a>
+</p>
+
+## Demo
+
+<p align="center">
+  <video src="assets/demo.mp4" controls playsinline width="720">
+    <a href="assets/demo.mp4">Play demo video (MP4)</a>
+  </video>
 </p>
 
 ---
 
 ## What is EchoDraft?
 
-EchoDraft is an **open-source, native Swift/SwiftUI** app for **macOS 15+**. It ingests audio and video files, **extracts audio** when needed, runs **local speech-to-text** (MLX / Qwen3-ASR by default), applies **lightweight speaker segmentation**, and lets you **edit transcripts**, **generate summaries**, and **ask questions** over the text — all with **SwiftData** for a searchable local library.
+EchoDraft is an **open-source, native Swift/SwiftUI** app for **macOS 15+**. It ingests audio and video files, **extracts audio** when needed, runs **local speech-to-text** (MLX / Qwen3-ASR by default), applies **heuristic offline speaker labels** (pause / sentence-style alternation between two speakers), and lets you **edit transcripts**, **generate summaries**, and **ask questions** over the text — all with **SwiftData** for a searchable local library. **Online** mode can use API-backed transcription with **proper diarization** when the provider returns speaker-attributed segments.
 
 - **Privacy-first:** Core processing runs on your machine. Model weights are downloaded **once** from Hugging Face into the standard cache, then reused **offline** (see [Data & privacy](#data--privacy)).
 - **Apple Silicon friendly:** MLX inference is tuned for M-series Macs; Intel is not a primary target for distributed builds.
@@ -44,13 +52,14 @@ Product detail and roadmap notes live in [.agent/prd.md](.agent/prd.md) and [.ag
 | Area | Description |
 |------|-------------|
 | **Speech-to-text** | Default: **Qwen3-ASR** (mlx-audio). Override with `ECHODRAFT_STT_MODEL`. |
+| **Speaker labels (offline)** | **Heuristic only:** alternates **Speaker 1 / Speaker 2** on sentence-like splits (not neural diarization). Edit labels in the transcript if needed. |
 | **Summaries** | Template styles (e.g. bullets, executive) via a small local **LLM** (default: Phi-3.5-class). |
 | **Chat** | Ask questions grounded in the current transcript. |
 | **Stub mode** | `ECHODRAFT_USE_STUB_ML=1` for UI/dev without loading MLX (CI-friendly). |
 
 ### Online mode (optional, OpenAI)
 
-You can switch the app to **Online** processing and use your **own OpenAI API key** (bring-your-own-key): transcription (e.g. Whisper-class API) and summaries/chat go to your configured **API base URL** (default `https://api.openai.com`), with the key stored in the **macOS Keychain**. **Offline** mode keeps STT and LLM on-device via MLX. Use **EchoDraft → Settings** (⌘,) for the API key and base URL, and the **toolbar** for the default Offline/Online mode; see [Data & privacy](#data--privacy) for what leaves the device.
+You can switch the app to **Online** processing and use your **own OpenAI API key** (bring-your-own-key): transcription (e.g. Whisper-class API) and summaries/chat go to your configured **API base URL** (default `https://api.openai.com`), with the key stored in the **macOS Keychain**. When the API returns **diarized** segments, EchoDraft preserves those speaker attributions. **Offline** mode keeps STT and LLM on-device via MLX and uses **pause-based** speaker labeling only. Use **EchoDraft → Settings** (⌘,) for the API key and base URL, and the **toolbar** for the default Offline/Online mode; see [Data & privacy](#data--privacy) for what leaves the device.
 
 ### Distribution & tooling
 
